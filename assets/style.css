@@ -1,0 +1,459 @@
+/**
+ * Polly Alt AI - Stylesheet v1.4.4
+ */
+
+/* =============================================================================
+   Field layout
+   ============================================================================= */
+
+.gemini-btn-wrapper {
+    display: block;
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+/* Native WP modal alignment */
+.setting.alt-text label.name {
+    width: 30% !important;
+    float: left !important;
+    margin: 0 !important;
+    padding: 8px 0 !important;
+}
+
+.setting.alt-text .gemini-field-header,
+.setting.alt-text .gemini-btn-wrapper {
+    float: right !important;
+    /* width: 65% !important; */
+    clear: none !important;
+}
+
+/* =============================================================================
+   Field header (label + counter)
+   ============================================================================= */
+
+.gemini-field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    width: 100%;
+    clear: both;
+    box-sizing: border-box;
+}
+
+.gemini-custom-field-label {
+    display: block;
+    font-weight: 600;
+    font-size: 11px !important;
+    color: #2271b1 !important;
+    text-transform: uppercase;
+    margin: 0 !important;
+}
+
+.gemini-char-counter {
+    font-size: 11px !important;
+    font-weight: bold;
+    color: #999;
+    white-space: nowrap;
+}
+
+.gemini-char-counter.over-limit {
+    color: #d63638;
+}
+
+/* =============================================================================
+   Action row & generate button
+   ============================================================================= */
+
+.gemini-action-row {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    clear: both;
+    box-sizing: border-box;
+}
+
+.gemini-gen-btn {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100% !important;
+    padding: 10px 14px;
+    background: #f6f7f7;
+    border: 1px solid #2271b1 !important;
+    color: #2271b1 !important;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 11px;
+    line-height: 1.3;
+    transition: all 0.1s;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.gemini-gen-btn:hover {
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.gemini-gen-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* =============================================================================
+   Standards advisor
+   ============================================================================= */
+
+.gemini-standards-text {
+    font-size: 12px !important;
+    line-height: 1.5;
+    color: #666;
+    margin: 12px 0;
+    display: block;
+    padding-left: 12px;
+    border-left: 3px solid #2271b1;
+    clear: both;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* =============================================================================
+   Decorative toggle
+   ============================================================================= */
+
+.gemini-decorative-wrap {
+    margin: 12px 0 15px 0;
+    padding: 12px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    clear: both;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.gemini-decorative-wrap label {
+    font-size: 12px !important;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #333;
+}
+
+.gemini-decorative-wrap input {
+    margin: 0 !important;
+    transform: scale(1.1);
+}
+
+.decorative-notice {
+    font-size: 12px !important;
+    color: #666;
+    font-style: italic;
+    display: block;
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
+/* =============================================================================
+   Textarea fields
+   ============================================================================= */
+
+.gemini-custom-textarea,
+.gemini-list-alt-field,
+textarea[data-setting="alt"],
+#attachment-details-alt-text {
+    width: 100% !important;
+    min-height: 80px !important;
+    font-size: 12px !important;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    background: #fff;
+    display: block;
+    line-height: 1.5;
+    box-sizing: border-box;
+}
+
+.missing-alt {
+    border: 2px solid #d63638 !important;
+    background: #fff8f8 !important;
+}
+
+.missing-alt::placeholder {
+    color: #d63638 !important;
+    opacity: 1 !important;
+}
+
+/* =============================================================================
+   Choice modal
+   ============================================================================= */
+
+#gemini-alt-modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 9999999;
+}
+
+#gemini-alt-modal {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 0;
+    border-radius: 12px;
+    width: 80vw;
+    max-width: 1200px;
+    max-height: 90vh;
+    z-index: 10000000;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.gemini-modal-header {
+    padding: 18px 25px;
+    border-bottom: 1px solid #eee;
+    background: #fcfcfc;
+    flex-shrink: 0;
+}
+
+.gemini-modal-header h3 {
+    margin: 0;
+    color: #2271b1;
+    font-size: 18px;
+}
+
+.gemini-modal-body {
+    padding: 25px;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.gemini-modal-image-container {
+    width: 100%;
+    background: #111;
+    display: block;
+    max-height: 50vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+    border-bottom: 1px solid #333;
+}
+
+.gemini-modal-image-container img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    display: block;
+    object-fit: contain;
+    margin: 0 auto;
+}
+
+.gemini-choice-item {
+    padding: 18px;
+    margin-bottom: 18px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fcfcfc;
+    line-height: 1.5;
+    transition: all 0.2s;
+    position: relative;
+    cursor: pointer;
+}
+
+.gemini-choice-item:hover {
+    border-color: #2271b1;
+    background: #fff;
+}
+
+.gemini-choice-tag {
+    font-size: 12px !important;
+    font-weight: bold;
+    color: #2271b1;
+    display: block;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.gemini-choice-char-count {
+    font-size: 11px !important;
+    color: #999;
+    display: block;
+    margin-top: 6px;
+}
+
+.gemini-modal-edit-btn {
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    color: #444;
+    border-radius: 3px;
+    padding: 5px 12px;
+    font-size: 12px !important;
+    font-weight: bold;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+
+.gemini-choice-explanation {
+    margin-top: 12px;
+    padding: 12px 15px;
+    background: #f0f6fb;
+    border-radius: 6px;
+    border-left: 4px solid #2271b1;
+    font-size: 12px !important;
+    color: #444;
+    font-style: italic;
+    line-height: 1.5;
+}
+
+.gemini-choice-textarea {
+    width: 100%;
+    min-height: 90px;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 12px;
+    border: 1px solid #2271b1;
+    border-radius: 4px;
+    margin: 12px 0;
+    background: #fff;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.gemini-footer-btn {
+    width: 100%;
+    padding: 16px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background: #f7f7f7;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #555;
+    font-size: 14px !important;
+}
+
+/* =============================================================================
+   Enforcement modal
+   ============================================================================= */
+
+#polly-enforcement-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 9999999;
+    animation: polly-fade-in 0.15s ease;
+}
+
+#polly-enforcement-modal {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border-radius: 12px;
+    width: 480px;
+    max-width: 90vw;
+    z-index: 10000000;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    animation: polly-slide-in 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#polly-enforcement-modal .gemini-modal-header {
+    background: #2271b1;
+    padding: 20px 25px;
+    border-bottom: none;
+}
+
+#polly-enforcement-modal .gemini-modal-header h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 20px;
+}
+
+#polly-enforcement-modal .gemini-modal-body {
+    padding: 25px;
+}
+
+#polly-enforcement-modal .gemini-modal-body p {
+    margin: 0 0 5px 0;
+    color: #333;
+}
+
+@keyframes polly-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes polly-slide-in {
+    from { opacity: 0; transform: translate(-50%, -48%); }
+    to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* =============================================================================
+   Media library column
+   ============================================================================= */
+   
+   .column-polly_alt_col {
+       width: 25%;
+    }
+    
+    #plupload-browse-button:focus {
+        outline: 3px solid #2271b1 !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 5px rgba(34, 113, 177, 0.25) !important;
+    }
+    
+/* =============================================================================
+    Notification on drag and drop
+    ============================================================================= */
+    
+#polly-drop-notification {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: #fff;
+    border-radius: 12px;
+    width: 380px;
+    max-width: 90vw;
+    z-index: 10000000;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: polly-slide-in-right 0.25s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#polly-drop-notification .gemini-modal-header {
+    background: #2271b1;
+    padding: 16px 20px;
+    border-bottom: none;
+}
+
+#polly-drop-notification .gemini-modal-header h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 17px;
+}
+
+#polly-drop-notification .gemini-modal-body {
+    padding: 20px;
+}
+
+@keyframes polly-slide-in-right {
+    from { opacity: 0; transform: translateX(30px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
