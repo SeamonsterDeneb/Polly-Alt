@@ -1,8 +1,7 @@
 /**
- * Polly Alt AI - Logic v.7
+ * Polly Alt AI - Logic v.9.6
 **/
 (function () {
-    console.log('%c🦜 POLLY ALT: JS ENGINE LOADED', 'color: green; font-size: 16px; font-weight: bold;');
 
     const config = typeof pollyConfig !== 'undefined' ? pollyConfig : null;
     if (!config) {
@@ -117,8 +116,21 @@
     function isUploadScreen() {
         return typeof pagenow !== 'undefined' && (pagenow === 'upload' || pagenow === 'media');
     }
+
+    function isElementorEditor() {
+        return document.body.classList.contains('elementor-editor-active');
+    }
+
+    function isEditScreen() {
+        if (isElementorEditor()) return true;
+        if (document.body.classList.contains('block-editor-page')) return true;
+        if (typeof pagenow === 'undefined') return true;
+        const nonEditScreens = ['upload', 'media', 'options-general', 'plugins', 'themes', 'users'];
+        return !nonEditScreens.includes(pagenow);
+    }
     // Stop uploading new files if alt text not given to previously uploaded ones, unless explicitly state they want to
     let uploadGuardSuppressed = false;
+    let insertGuardSuppressed = false;
     function syncUploadGuard() {
         if (uploadGuardSuppressed) return;
         const uploadBtn = document.querySelector(
@@ -191,7 +203,7 @@
         showEnforcementModal(null, missing.length, 'Upload anyway', firstBtn);
     }, true);
 
-    function showEnforcementModal(targetUrl, missingCount, leaveLabel = 'Leave anyway', focusTarget = null, customMessage = null) {
+    function showEnforcementModal(targetUrl, missingCount, leaveLabel = 'Leave anyway', focusTarget = null, customMessage = null, onStay = null) {
             if (document.getElementById('polly-enforcement-overlay')) return;
 
         const noun = missingCount === 1 ? 'image is' : 'images are';
@@ -251,28 +263,40 @@
 
         document.getElementById('polly-stay-btn').onclick = () => {
             cleanup();
-            const target = focusTarget || document.querySelector('.gemini-gen-btn');
-            if (target) {
-                target.focus();
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (onStay) {
+                onStay();
+            } else {
+                const target = focusTarget || document.querySelector('.gemini-gen-btn');
+                if (target) {
+                    target.focus();
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
         };
         document.getElementById('polly-leave-btn').onclick = () => {
             if (targetUrl) {
                 window.location.href = targetUrl;
             } else {
-                uploadGuardSuppressed = true;
-                document.querySelectorAll('.polly-upload-guarded, #plupload-browse-button, .plupload-upload-uic')
-                    .forEach(el => el.classList.remove('polly-upload-guarded'));
                 cleanup();
-                const uploadBtn = document.querySelector(
-                    '#plupload-browse-button, .plupload-upload-uic'
+                // Re-click whichever action button triggered this
+                const insertBtn = document.querySelector(
+                    '.media-modal .media-button-select, ' +
+                    '.media-modal .media-button-insert'
                 );
-                if (uploadBtn) {
-                    uploadBtn.focus();
-                    uploadBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (insertBtn) {
+                    insertGuardSuppressed = true;
+                    cleanup();
+                    insertBtn.click();
+                    setTimeout(() => { insertGuardSuppressed = false; }, 1000);
+                } else {
+                    // Fallback: upload screen suppress
+                    uploadGuardSuppressed = true;
+                    document.querySelectorAll('.polly-upload-guarded, #plupload-browse-button, .plupload-upload-uic')
+                        .forEach(el => el.classList.remove('polly-upload-guarded'));
+                    const uploadBtn = document.querySelector('#plupload-browse-button, .plupload-upload-uic');
+                    if (uploadBtn) { uploadBtn.focus(); uploadBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+                    setTimeout(() => { uploadGuardSuppressed = false; }, 1000);
                 }
-                setTimeout(() => { uploadGuardSuppressed = false; }, 1000);
             }
         };
 
@@ -314,15 +338,19 @@
 
             // Wait for injectUploaderFields to have run on the new rows.
             setTimeout(() => {
-                const firstNewBtn = newRows[0]
-                    ?.querySelector('.gemini-gen-btn');
+            // Ensure fields are injected for all new rows before we prompt
+            injectUploaderFields();
+            initPolly();
+
+            const firstNewBtn = newRows[0]
+                ?.querySelector('.gemini-gen-btn');
 
                 const message = totalMissing > newCount
                     ? `You already had ${totalMissing - newCount} image${totalMissing - newCount !== 1 ? 's' : ''} needing alt text, and you've just added ${newCount} more. Want Polly to help?`
                     : `You've just uploaded ${newCount} new image${newCount !== 1 ? 's' : ''}. Want Polly to help add alt text?`;
 
                 showDropNotification(message, firstNewBtn);
-            }, 600);
+            }, 1000);
         });
 
         dropObserver.observe(document.body, { childList: true, subtree: true });
@@ -423,7 +451,8 @@
         const context = field.closest(
             '.media-sidebar, .attachment-details, .media-frame-side, .media-modal, ' +
             '.media-item, tr, .gemini-list-field-container'
-        );
+        ) || field.closest('.attachment-details')?.closest('.attachment-info, .save-ready')
+        || field.closest('.save-ready');
 
         let id = null;
 
@@ -548,13 +577,19 @@
 
         const internalId = field.id;
         const parent = field.parentNode;
+        if (!parent) {
+            console.warn('🦜 POLLY: field has no parentNode, skipping:', field);
+            return;
+        }
 
         // --- Header (label + character counter) ---
         const existingHeader = field.closest(
             '.gemini-list-field-container, .media-item, .setting'
         )?.querySelector('.gemini-field-header');
 
-        if (!existingHeader) {
+        const nativeLabel = field.closest('.setting')?.querySelector('label.name');
+
+        if (!existingHeader && !nativeLabel) {
             const header = document.createElement('div');
             header.className = 'gemini-field-header';
             header.innerHTML = `
@@ -563,8 +598,18 @@
             `;
             parent.insertBefore(header, field);
         } else {
-            const counter = existingHeader.querySelector('.gemini-char-counter');
-            if (counter) counter.dataset.for = internalId;
+            let counter = existingHeader?.querySelector('.gemini-char-counter');
+            if (!counter) {
+                // Native label exists but no counter yet — inject one after the label
+                counter = document.createElement('span');
+                counter.className = 'gemini-char-counter';
+                counter.dataset.for = internalId;
+                counter.textContent = '0 characters';
+                const labelEl = nativeLabel || existingHeader;
+                labelEl.insertAdjacentElement('afterend', counter);
+            } else {
+                counter.dataset.for = internalId;
+            }
         }
 
         // --- Wrapper + Generate button ---
@@ -588,7 +633,14 @@
         };
 
         actionRow.appendChild(btn);
-        wrapper.parentNode.insertBefore(actionRow, wrapper.nextSibling);
+
+        const wrapperParent = wrapper.parentNode;
+        if (!wrapperParent) {
+            console.warn('🦜 POLLY: wrapper was detached before actionRow could be inserted — retrying in 500ms');
+            setTimeout(initPolly, 500);
+            return;
+        }
+        wrapperParent.insertBefore(actionRow, wrapper.nextSibling);
 
         // --- Standards advisor ---
         const advisor = document.createElement('span');
@@ -660,37 +712,85 @@
         }
     }
     async function triggerGeneration(field, attachmentId) {
-        const row = field.closest('tr, .media-item, .attachment-details, .media-frame, .media-modal');
-        let imgEl = row
-            ? row.querySelector('.column-thumbnail img, .pinkynail, .details-image, .thumbnail img, img')
-            : null;
-
-        if ((!imgEl || !imgEl.src) && document.querySelector('.media-modal')) {
-            imgEl = document.querySelector('.media-modal img.details-image, .attachment-details img');
-        }
-
-        if (!imgEl || !imgEl.src) {
-            alert("🦜 Polly can't see the image. Try opening the attachment directly.");
-            return;
-        }
-
         const btn = document.querySelector(`.gemini-gen-btn[data-for="${field.id}"]`);
         const originalLabel = btn.textContent;
         btn.textContent = 'Thinking…';
         btn.disabled = true;
 
-        const highResSrc = getHighResUrl(imgEl.src);
-        // Use the thumbnail for the API call — Gemini doesn't need
-        // full resolution to describe an image, and large files hit
-        // size limits in the proxy and Gemini's inline data API.
-        const apiSrc = imgEl.src; // thumbnail already
+        // Try Backbone model first — most reliable in media modal contexts
+        let apiSrc = null;
+        let highResSrc = null;
+
+        if (attachmentId && window.wp?.media?.attachment) {
+            const model = wp.media.attachment(attachmentId);
+            // If the model doesn't have URL data yet, fetch it first
+            if (!model.get('url')) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        model.fetch({
+                            success: resolve,
+                            error: reject
+                        });
+                    });
+                } catch (e) {
+                    console.warn('🦜 POLLY: Could not fetch attachment model:', e);
+                }
+            }
+            const url = model.get('url') || model.get('sizes')?.full?.url || model.get('sizes')?.large?.url;
+            if (url) {
+                highResSrc = url;
+                // Use medium/thumbnail size for API if available to avoid size limits
+                apiSrc = model.get('sizes')?.medium?.url
+                    || model.get('sizes')?.thumbnail?.url
+                    || url;
+            }
+        }
+
+        // Fall back to DOM if Backbone didn't have it
+        if (!apiSrc) {
+            const row = field.closest('tr, .media-item, .media-frame, .media-modal')
+                || field.closest('.attachment-details')?.parentElement;
+            let imgEl = row
+                ? row.querySelector('.column-thumbnail img, .pinkynail, .details-image, .thumbnail img, img')
+                : null;
+
+            if ((!imgEl || !imgEl.src) && document.querySelector('.media-modal')) {
+                // Scope to the selected attachment, not just any img in the sidebar
+                const selected = document.querySelector('.media-modal .attachment.selected, .media-modal [data-id].selected');
+                imgEl = selected
+                    ? selected.querySelector('img')
+                    : document.querySelector('.media-modal .attachment-details .thumbnail img');
+            }
+
+            if (!imgEl || !imgEl.src) {
+                alert("🦜 Polly can't see the image. Try opening the attachment directly.");
+                return;
+            }
+
+            highResSrc = getHighResUrl(imgEl.src);
+            apiSrc = imgEl.src;
+        }
+
         const mimeType = mimeTypeFromUrl(highResSrc);
 
         const prompt =
-            `Write accessibility alt text for this image (target ~125 characters). ` +
-            `Provide exactly ${config.choiceCount} distinct variations. ` +
-            `Return ONLY a valid JSON array of objects. Each object must have an 'alt' key (string) ` +
-            `and an 'explanation' key (string). Do not begin any alt text with "image of" or "photo of". ` +
+            `You are an accessibility expert writing alt text for a web image. ` +
+            `Generate exactly ${config.choiceCount} distinct alt text variations following these rules:\n\n` +
+            `RULES:\n` +
+            `- Each alt text MUST be between 100-125 characters (count carefully — this is a hard requirement)\n` +
+            `- Do NOT begin with "image of", "photo of", "picture of", or similar\n` +
+            `- Write in plain language, present tense, active voice\n` +
+            `- Include only what is visible — no interpretation or assumptions\n\n` +
+            `VARIATIONS:\n` +
+            `Each variation must foreground a DIFFERENT visible subject or element from the image as its opening focus — ` +
+            `the thing named first in the alt text should differ across all variations. ` +
+            `For example, if the image shows a harvester in a coffee field, one variation might open with the harvester, ` +
+            `another with the rows of coffee trees, another with the wider farm scene. ` +
+            `Choose the ${config.choiceCount} most distinct and interesting visual elements as your focal points.\n\n` +
+            `Return ONLY a valid JSON array of objects with these exact keys:\n` +
+            `- "alt": the alt text string (100-125 characters, verified)\n` +
+            `- "focus": a short noun phrase naming the visual element foregrounded in this variation (e.g. "orange coffee harvester", "rows of green coffee trees", "hillside coffee farm")\n` +
+            `- "explanation": one sentence explaining why a screen reader user might find this framing useful\n\n` +
             `Do not include any text outside the JSON array.`;
 
         try {
@@ -731,7 +831,9 @@
             const rawChoices = JSON.parse(rawText);
             const choices = rawChoices.map(c => ({
                 alt: c.alt || c.text || '',
-                explanation: config.includeExplanation ? (c.explanation || null) : null,
+                explanation: config.includeExplanation
+                    ? (c.focus ? `Image focus: ${c.focus}. ${c.explanation || ''}`.trim() : (c.explanation || null))
+                    : null,
             }));
             
             showChoiceModal(choices, field, field.value.trim(), highResSrc, btn, (selectedText) => {
@@ -790,6 +892,16 @@
             <div class="gemini-modal-body"></div>
         `;
 
+        const imgContainer = modal.querySelector('.gemini-modal-image-container');
+        const img = imgContainer.querySelector('img');
+        img.onload = () => {
+            imgContainer.scrollTop = (imgContainer.scrollHeight - imgContainer.clientHeight) / 2;
+        };
+        // If image is already cached and onload won't fire, trigger manually
+        if (img.complete) {
+            imgContainer.scrollTop = (imgContainer.scrollHeight - imgContainer.clientHeight) / 2;
+        }
+
         const body = modal.querySelector('.gemini-modal-body');
 
         const options = [];
@@ -812,6 +924,7 @@
             const charCount = document.createElement('span');
             charCount.className = 'gemini-choice-char-count';
             charCount.textContent = `${opt.alt.length} characters`;
+            charCount.classList.toggle('over-limit', opt.alt.length > 125);
 
             item.appendChild(tag);
             item.appendChild(content);
@@ -855,6 +968,10 @@
                     editBtn.dataset.state = 'apply';
                     textarea.addEventListener('input', () => {
                         charCount.textContent = `${textarea.value.length} characters`;
+                        charCount.classList.toggle('over-limit', textarea.value.length > 125);
+                    });
+                    textarea.addEventListener('click', (e) => {
+                        e.stopPropagation();
                     });
                     textarea.focus();
                 } else {
@@ -926,19 +1043,248 @@
         modal.focus();
         trapFocus(modal);
     }
+    // -------------------------------------------------------------------------
+    // Gutenberg image block helper
+    // -------------------------------------------------------------------------
+    function initGutenbergSidebarWatcher() {
+        if (!document.body.classList.contains('block-editor-page')) return;
 
+        let lastImageBlock = null; // { clientId, fieldValue, isDecorative }
+
+        // Check if a block is an image block with missing alt
+        function checkBlockOnLeave(clientId) {
+            if (!clientId) return;
+            try {
+                const block = wp.data.select('core/block-editor').getBlock(clientId);
+                if (!block || block.name !== 'core/image') return;
+                const alt = block.attributes?.alt ?? '';
+                const isDecorative = block.attributes?.className?.includes('is-decorative') || false;
+                if (!alt.trim() && !isDecorative) {
+                    showEnforcementModal(
+                        null,
+                        1,
+                        'Continue anyway',
+                        null,
+                        'This image has no alt text. Blind and low-vision visitors won\'t know what it shows.',
+                        () => {
+                            // Re-select the block and open the sidebar
+                            wp.data.dispatch('core/block-editor').selectBlock(clientId);
+                            wp.data.dispatch('core/edit-post')
+                                ?.openGeneralSidebar('edit-post/block');
+                        }
+                    );
+                }
+            } catch (e) {
+                console.warn('🦜 POLLY: Error checking block on leave:', e);
+            }
+        }
+
+        // Subscribe to block selection changes
+        if (window.wp?.data) {
+            let previousClientId = null;
+            wp.data.subscribe(() => {
+                try {
+                    const selectedBlock = wp.data.select('core/block-editor').getSelectedBlock();
+                    const currentClientId = selectedBlock?.clientId || null;
+
+                    if (previousClientId && previousClientId !== currentClientId) {
+                        checkBlockOnLeave(previousClientId);
+                    }
+                    previousClientId = currentClientId;
+                } catch (e) {
+                    // silently ignore
+                }
+            });
+        }
+
+        const gutenbergObserver = new MutationObserver(() => {
+            const altLabel = [...document.querySelectorAll('.components-base-control__label')]
+                .find(el => el.textContent.trim() === 'Alternative text');
+            if (!altLabel) return;
+
+            const field = altLabel.closest('.components-base-control')
+                ?.querySelector('textarea.components-textarea-control__input');
+            if (!field || field.dataset.pollyReady) return;
+
+            field.dataset.pollyReady = 'true';
+
+            const getBlockData = () => {
+                try {
+                    const block = wp.data.select('core/block-editor').getSelectedBlock();
+                    return block || null;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const getAttachmentId = () => getBlockData()?.attributes?.id || null;
+
+            // --- Counter ---
+            const counter = document.createElement('span');
+            counter.className = 'gemini-char-counter';
+            counter.textContent = `${field.value.length} characters`;
+            counter.classList.toggle('over-limit', field.value.length > 125);
+            altLabel.parentNode.insertBefore(counter, altLabel.nextSibling);
+
+            // --- Generate button ---
+            const actionRow = document.createElement('div');
+            actionRow.className = 'gemini-action-row';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'gemini-gen-btn';
+            btn.textContent = field.value.trim() ? 'Preview and Refine' : 'Preview and Generate';
+            btn.onclick = (e) => {
+                e.preventDefault();
+                const id = getAttachmentId();
+                if (!id) {
+                    alert('🦜 Polly: Please click the image block first so Polly knows which image to describe.');
+                    return;
+                }
+                if (!field.id) field.id = 'polly-gutenberg-field-' + id;
+                btn.dataset.for = field.id;
+                triggerGeneration(field, String(id));
+            };
+            actionRow.appendChild(btn);
+            field.closest('.components-base-control').after(actionRow);
+
+            // --- Decorative checkbox ---
+            const decoWrap = document.createElement('div');
+            decoWrap.className = 'gemini-decorative-wrap';
+            const decoId = 'polly-gutenberg-deco-' + (getAttachmentId() || Math.random().toString(36).slice(2));
+            decoWrap.innerHTML = `
+                <label for="${decoId}">
+                    <input type="checkbox" id="${decoId}" class="gemini-decorative-check">
+                    Decorative
+                </label>
+                <span class="decorative-notice">Blind and low-vision users don't need a description of this image.</span>
+            `;
+            actionRow.after(decoWrap);
+
+            const decoCheck = decoWrap.querySelector('.gemini-decorative-check');
+
+            // Sync initial decorative state from block attributes
+            const initialBlock = getBlockData();
+            if (initialBlock?.attributes?.className?.includes('is-decorative')) {
+                decoCheck.checked = true;
+                field.disabled = true;
+            }
+
+            decoCheck.addEventListener('change', () => {
+                const block = getBlockData();
+                if (!block) return;
+                if (decoCheck.checked) {
+                    field.value = '';
+                    field.disabled = true;
+                    field.classList.remove('missing-alt');
+                    counter.textContent = '0 characters';
+                    counter.classList.remove('over-limit');
+                    // Add is-decorative class to block attributes
+                    const currentClass = block.attributes?.className || '';
+                    if (!currentClass.includes('is-decorative')) {
+                        wp.data.dispatch('core/block-editor').updateBlockAttributes(
+                            block.clientId,
+                            { className: (currentClass + ' is-decorative').trim(), alt: '' }
+                        );
+                    }
+                } else {
+                    field.disabled = false;
+                    // Remove is-decorative from block attributes
+                    const currentClass = (block.attributes?.className || '')
+                        .replace('is-decorative', '').trim();
+                    wp.data.dispatch('core/block-editor').updateBlockAttributes(
+                        block.clientId,
+                        { className: currentClass }
+                    );
+                }
+            });
+
+            // --- Update counter and button label on input ---
+            field.addEventListener('input', () => {
+                counter.textContent = `${field.value.length} characters`;
+                counter.classList.toggle('over-limit', field.value.length > 125);
+                btn.textContent = field.value.trim() ? 'Preview and Refine' : 'Preview and Generate';
+                // Also sync alt text back to block attributes
+                const block = getBlockData();
+                if (block) {
+                    wp.data.dispatch('core/block-editor').updateBlockAttributes(
+                        block.clientId,
+                        { alt: field.value }
+                    );
+                }
+            });
+        });
+
+        gutenbergObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    initGutenbergSidebarWatcher();
+
+    // -------------------------------------------------------------------------
+    // Elementor media modal watcher
+    // -------------------------------------------------------------------------
+    
+
+    function initElementorWatcher() {
+        // Strategy 1: watch for .media-modal being added to the DOM
+        const elementorObserver = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    if (node.matches?.('.media-modal') || node.querySelector?.('.media-modal')) {
+                        waitForAltField();
+                        return;
+                    }
+                }
+            }
+            // Strategy 2: also watch for .media-modal becoming visible
+            // (Elementor may show/hide an existing node rather than add a new one)
+            const existing = document.querySelector('.media-modal');
+            if (existing && existing.offsetParent !== null && !existing.dataset.pollyWatching) {
+                existing.dataset.pollyWatching = 'true';
+                waitForAltField();
+            }
+        });
+        elementorObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+
+        // Strategy 3: if the modal is already in the DOM and visible on load, catch it immediately
+        const existing = document.querySelector('.media-modal');
+        if (existing && existing.offsetParent !== null) {
+            existing.dataset.pollyWatching = 'true';
+            waitForAltField();
+        }
+    }
+
+    function waitForAltField() {
+        const maxWait = 30000; // bumped to 30s to match your slow Local env
+        const interval = 300;
+        let elapsed = 0;
+
+        const poll = setInterval(() => {
+            elapsed += interval;
+            const field = document.querySelector('#attachment-details-alt-text');
+
+            if (field && !field.dataset.pollyReady) {
+                clearInterval(poll);
+                initPolly();
+            } else if (field && field.dataset.pollyReady) {
+                clearInterval(poll);
+            } else if (elapsed >= maxWait) {
+                clearInterval(poll);
+                console.warn('🦜 POLLY: Timed out waiting for alt field after 30s. Field never appeared.');
+            }
+        }, interval);
+    }
+
+    initElementorWatcher();
     // -------------------------------------------------------------------------
     // Gutenberg media inserter intercept
     // -------------------------------------------------------------------------
-
     /**
      * Watch for Gutenberg's media modal Insert button and intercept clicks
      * when the selected attachment has no alt text.
      */
     function initMediaInsertIntercept() {
-        // Only run on post/page edit screens.
-        if (typeof pagenow === 'undefined' ||
-            !['post', 'page', 'post-new', 'post-edit'].includes(pagenow)) return;
+        if (!isEditScreen()) return;
 
         const mediaModalObserver = new MutationObserver(() => {
             // Look for the Insert/Select button in the Gutenberg media modal.
@@ -950,6 +1296,7 @@
             insertBtn.dataset.pollyGuarded = 'true';
 
             insertBtn.addEventListener('click', (e) => {
+                if (insertGuardSuppressed) return;
                 // Find the selected attachment in the media modal.
                 const selected = document.querySelector(
                     '.media-modal .attachment.selected, ' +
@@ -1014,7 +1361,7 @@
             [...m.addedNodes].some(n => {
                 if (n.nodeType !== 1) return false;
                 return (
-                    n.matches?.('.media-item, .gemini-list-field-container, .attachment-details, [data-setting="alt"]') ||
+                    n.matches?.('.media-item, .gemini-list-field-container, .attachment-details, .media-frame, [data-setting="alt"]') ||
                     n.querySelector?.('.media-item, .gemini-list-alt-field, [data-setting="alt"], #attachment-details-alt-text')
                 );
             })

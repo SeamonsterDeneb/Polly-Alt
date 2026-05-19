@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: .7
+ * Version: .9.6
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '.7' );
+define( 'POLLY_ALT_VERSION', '.9.6' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -220,9 +220,17 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
     $screen = get_current_screen();
     if ( ! $screen ) return;
 
-    $allowed_bases = [ 'upload', 'media', 'post', 'page' ];
+    $allowed_bases = [ 'upload', 'media', 'post', 'page', 'elementor' ];
     if ( ! in_array( $screen->base, $allowed_bases, true ) ) return;
 
+    polly_alt_enqueue_assets();
+} );
+
+add_action( 'elementor/editor/before_enqueue_scripts', function () {
+    polly_alt_enqueue_assets();
+} );
+
+function polly_alt_enqueue_assets() {
     $api_key  = get_option( 'polly_alt_api_key', '' );
     $base_url = plugin_dir_url( POLLY_ALT_PLUGIN_FILE );
 
@@ -249,7 +257,7 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
         'ajaxUrl'            => admin_url( 'admin-ajax.php' ),
         'nonce'              => wp_create_nonce( 'polly_nonce' ),
     ] );
-} );
+}
 
 // =============================================================================
 // 5. Handle API Key Securely

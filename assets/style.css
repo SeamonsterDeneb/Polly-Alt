@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Stylesheet v1.4.4
+ * Polly Alt AI - Stylesheet v.9.5.9
  */
 
 /* =============================================================================
@@ -58,8 +58,34 @@
     white-space: nowrap;
 }
 
-.gemini-char-counter.over-limit {
+.setting.alt-text .gemini-char-counter.over-limit,
+.gemini-char-counter.over-limit,
+.gemini-choice-char-count.over-limit {
     color: #d63638;
+}
+
+.setting.alt-text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.setting.alt-text label.name {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.setting.alt-text .gemini-char-counter {
+    flex: 0 0 auto;
+    margin-left: 8px;
+    margin-bottom: 0;
+}
+
+.setting.alt-text .gemini-btn-wrapper,
+.setting.alt-text .gemini-action-row,
+.setting.alt-text .gemini-standards-text,
+.setting.alt-text .gemini-decorative-wrap {
+    flex: 0 0 100%;
 }
 
 /* =============================================================================
@@ -249,12 +275,9 @@ textarea[data-setting="alt"],
 }
 
 .gemini-modal-image-container img {
-    width: auto;
+    width: 100%;
     height: auto;
-    max-width: 100%;
     display: block;
-    object-fit: contain;
-    margin: 0 auto;
 }
 
 .gemini-choice-item {
