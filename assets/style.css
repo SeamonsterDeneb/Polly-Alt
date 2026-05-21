@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Stylesheet v.9.7
+ * Polly Alt AI - Stylesheet v.9.15
  */
 
 /* =============================================================================
@@ -483,10 +483,21 @@ textarea[data-setting="alt"],
 
 
 /* =============================================================================
-    Polly focus on Generate Button
+    Polly focus styling for keyboard accessibility
     ============================================================================= */
 
-.polly-gen-btn:focus {
+/* Main page generation buttons */
+.polly-action-row .polly-gen-btn:focus-visible,
+.polly-field-header .polly-decorative-check:focus-visible,
+.polly-decorative-wrap .polly-decorative-check:focus-visible,
+
+/* Choice and enforcement modals */
+#polly-alt-modal .polly-modal-edit-btn:focus-visible,
+#polly-alt-modal .polly-footer-btn:focus-visible,
+#polly-alt-modal .polly-modal-decorative-check:focus-visible,
+#polly-enforcement-modal button:focus-visible,
+#polly-drop-notification button:focus-visible {
     outline: 6px solid #96BE2D;
+    outline-offset: 2px;
     box-shadow: 0 0 0 8px #4a9c5d;
 }

@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v.9.12
+ * Polly Alt AI - Logic v.9.16
 **/
 (function () {
 
@@ -185,7 +185,12 @@
         if (missing.length > 0) {
             e.preventDefault();
             e.stopPropagation();
-            showEnforcementModal(link.href, missing.length);
+            
+            // Find the generate button explicitly tied to the first missing element
+            const firstMissingBtn = missing[0]?.closest('.polly-list-field-container, .media-item, .setting')
+                ?.querySelector('.polly-gen-btn');
+                
+            showEnforcementModal(link.href, missing.length, 'Leave anyway', firstMissingBtn);
         }
     }, true);
 
@@ -306,7 +311,7 @@
 
         modal.setAttribute('tabindex', '-1');
         modal.focus();
-        document.getElementById('polly-stay-btn').focus();
+        document.getElementById('polly-stay-btn').focus({ focusVisible: true });
         trapFocus(modal);
     }
     // -------------------------------------------------------------------------
@@ -864,7 +869,17 @@
 
         } catch (err) {
             const isSize = err.message.includes('Resource exhausted') || err.message.includes('429');
-            alert('🦜 Polly Error: ' + err.message + (isSize ? '\n\nTip: If your image is very large, try optimising it first (under 1MB works best).' : ''));
+            const isJson = err instanceof SyntaxError || err.message.includes('JSON');
+            
+            let errorMsg = '🦜 Polly Error: ' + err.message;
+            
+            if (isJson) {
+                errorMsg = "🦜 Polly Error: Sorry, maybe the AI model is still getting its sea-legs because it sent back a scrambled message! Please try clicking the button again in a few moments.";
+            } else if (isSize) {
+                errorMsg += '\n\nTip: If your image is very large, try optimising it first (under 1MB works best).';
+            }
+            
+            alert(errorMsg);
         } finally {
             btn.textContent = originalLabel;
             btn.disabled = false;
