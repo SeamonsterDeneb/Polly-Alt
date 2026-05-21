@@ -1,12 +1,12 @@
 /**
- * Polly Alt AI - Stylesheet v.9.5.9
+ * Polly Alt AI - Stylesheet v.9.7
  */
 
 /* =============================================================================
    Field layout
    ============================================================================= */
 
-.gemini-btn-wrapper {
+.polly-btn-wrapper {
     display: block;
     width: 100%;
     margin: 0;
@@ -21,8 +21,8 @@
     padding: 8px 0 !important;
 }
 
-.setting.alt-text .gemini-field-header,
-.setting.alt-text .gemini-btn-wrapper {
+.setting.alt-text .polly-field-header,
+.setting.alt-text .polly-btn-wrapper {
     float: right !important;
     /* width: 65% !important; */
     clear: none !important;
@@ -32,7 +32,7 @@
    Field header (label + counter)
    ============================================================================= */
 
-.gemini-field-header {
+.polly-field-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -42,7 +42,7 @@
     box-sizing: border-box;
 }
 
-.gemini-custom-field-label {
+.polly-custom-field-label {
     display: block;
     font-weight: 600;
     font-size: 11px !important;
@@ -51,16 +51,16 @@
     margin: 0 !important;
 }
 
-.gemini-char-counter {
+.polly-char-counter {
     font-size: 11px !important;
     font-weight: bold;
     color: #999;
     white-space: nowrap;
 }
 
-.setting.alt-text .gemini-char-counter.over-limit,
-.gemini-char-counter.over-limit,
-.gemini-choice-char-count.over-limit {
+.setting.alt-text .polly-char-counter.over-limit,
+.polly-char-counter.over-limit,
+.polly-choice-char-count.over-limit {
     color: #d63638;
 }
 
@@ -75,16 +75,16 @@
     margin-bottom: 0;
 }
 
-.setting.alt-text .gemini-char-counter {
+.setting.alt-text .polly-char-counter {
     flex: 0 0 auto;
     margin-left: 8px;
     margin-bottom: 0;
 }
 
-.setting.alt-text .gemini-btn-wrapper,
-.setting.alt-text .gemini-action-row,
-.setting.alt-text .gemini-standards-text,
-.setting.alt-text .gemini-decorative-wrap {
+.setting.alt-text .polly-btn-wrapper,
+.setting.alt-text .polly-action-row,
+.setting.alt-text .polly-standards-text,
+.setting.alt-text .polly-decorative-wrap {
     flex: 0 0 100%;
 }
 
@@ -92,7 +92,7 @@
    Action row & generate button
    ============================================================================= */
 
-.gemini-action-row {
+.polly-action-row {
     display: block;
     width: 100%;
     margin-top: 10px;
@@ -100,7 +100,7 @@
     box-sizing: border-box;
 }
 
-.gemini-gen-btn {
+.polly-gen-btn {
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -119,12 +119,12 @@
     box-sizing: border-box;
 }
 
-.gemini-gen-btn:hover {
+.polly-gen-btn:hover {
     background: #fff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.gemini-gen-btn:disabled {
+.polly-gen-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
@@ -133,7 +133,7 @@
    Standards advisor
    ============================================================================= */
 
-.gemini-standards-text {
+.polly-standards-text {
     font-size: 12px !important;
     line-height: 1.5;
     color: #666;
@@ -150,7 +150,7 @@
    Decorative toggle
    ============================================================================= */
 
-.gemini-decorative-wrap {
+.polly-decorative-wrap {
     margin: 12px 0 15px 0;
     padding: 12px;
     background: #f9f9f9;
@@ -161,7 +161,7 @@
     box-sizing: border-box;
 }
 
-.gemini-decorative-wrap label {
+.polly-decorative-wrap label {
     font-size: 12px !important;
     font-weight: 600;
     cursor: pointer;
@@ -171,7 +171,7 @@
     color: #333;
 }
 
-.gemini-decorative-wrap input {
+.polly-decorative-wrap input {
     margin: 0 !important;
     transform: scale(1.1);
 }
@@ -189,8 +189,8 @@
    Textarea fields
    ============================================================================= */
 
-.gemini-custom-textarea,
-.gemini-list-alt-field,
+.polly-custom-textarea,
+.polly-list-alt-field,
 textarea[data-setting="alt"],
 #attachment-details-alt-text {
     width: 100% !important;
@@ -219,7 +219,7 @@ textarea[data-setting="alt"],
    Choice modal
    ============================================================================= */
 
-#gemini-alt-modal-overlay {
+#polly-alt-modal-overlay {
     position: fixed;
     top: 0; left: 0;
     width: 100%; height: 100%;
@@ -227,7 +227,7 @@ textarea[data-setting="alt"],
     z-index: 9999999;
 }
 
-#gemini-alt-modal {
+#polly-alt-modal {
     position: fixed;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
@@ -245,26 +245,26 @@ textarea[data-setting="alt"],
     flex-direction: column;
 }
 
-.gemini-modal-header {
+.polly-modal-header {
     padding: 18px 25px;
     border-bottom: 1px solid #eee;
     background: #fcfcfc;
     flex-shrink: 0;
 }
 
-.gemini-modal-header h3 {
+.polly-modal-header h3 {
     margin: 0;
     color: #2271b1;
     font-size: 18px;
 }
 
-.gemini-modal-body {
+.polly-modal-body {
     padding: 25px;
     overflow-y: auto;
     flex-grow: 1;
 }
 
-.gemini-modal-image-container {
+.polly-modal-image-container {
     width: 100%;
     background: #111;
     display: block;
@@ -274,13 +274,13 @@ textarea[data-setting="alt"],
     border-bottom: 1px solid #333;
 }
 
-.gemini-modal-image-container img {
+.polly-modal-image-container img {
     width: 100%;
     height: auto;
     display: block;
 }
 
-.gemini-choice-item {
+.polly-choice-item {
     padding: 18px;
     margin-bottom: 18px;
     border: 1px solid #ddd;
@@ -293,12 +293,12 @@ textarea[data-setting="alt"],
     cursor: pointer;
 }
 
-.gemini-choice-item:hover {
+.polly-choice-item:hover {
     border-color: #2271b1;
     background: #fff;
 }
 
-.gemini-choice-tag {
+.polly-choice-tag {
     font-size: 12px !important;
     font-weight: bold;
     color: #2271b1;
@@ -308,14 +308,14 @@ textarea[data-setting="alt"],
     letter-spacing: 0.5px;
 }
 
-.gemini-choice-char-count {
+.polly-choice-char-count {
     font-size: 11px !important;
     color: #999;
     display: block;
     margin-top: 6px;
 }
 
-.gemini-modal-edit-btn {
+.polly-modal-edit-btn {
     position: absolute;
     right: 15px;
     top: 15px;
@@ -330,7 +330,7 @@ textarea[data-setting="alt"],
     text-transform: uppercase;
 }
 
-.gemini-choice-explanation {
+.polly-choice-explanation {
     margin-top: 12px;
     padding: 12px 15px;
     background: #f0f6fb;
@@ -342,7 +342,7 @@ textarea[data-setting="alt"],
     line-height: 1.5;
 }
 
-.gemini-choice-textarea {
+.polly-choice-textarea {
     width: 100%;
     min-height: 90px;
     font-size: 14px;
@@ -356,7 +356,7 @@ textarea[data-setting="alt"],
     box-sizing: border-box;
 }
 
-.gemini-footer-btn {
+.polly-footer-btn {
     width: 100%;
     padding: 16px;
     cursor: pointer;
@@ -396,23 +396,23 @@ textarea[data-setting="alt"],
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-#polly-enforcement-modal .gemini-modal-header {
+#polly-enforcement-modal .polly-modal-header {
     background: #2271b1;
     padding: 20px 25px;
     border-bottom: none;
 }
 
-#polly-enforcement-modal .gemini-modal-header h3 {
+#polly-enforcement-modal .polly-modal-header h3 {
     margin: 0;
     color: #fff;
     font-size: 20px;
 }
 
-#polly-enforcement-modal .gemini-modal-body {
+#polly-enforcement-modal .polly-modal-body {
     padding: 25px;
 }
 
-#polly-enforcement-modal .gemini-modal-body p {
+#polly-enforcement-modal .polly-modal-body p {
     margin: 0 0 5px 0;
     color: #333;
 }
@@ -460,23 +460,33 @@ textarea[data-setting="alt"],
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-#polly-drop-notification .gemini-modal-header {
+#polly-drop-notification .polly-modal-header {
     background: #2271b1;
     padding: 16px 20px;
     border-bottom: none;
 }
 
-#polly-drop-notification .gemini-modal-header h3 {
+#polly-drop-notification .polly-modal-header h3 {
     margin: 0;
     color: #fff;
     font-size: 17px;
 }
 
-#polly-drop-notification .gemini-modal-body {
+#polly-drop-notification .polly-modal-body {
     padding: 20px;
 }
 
 @keyframes polly-slide-in-right {
     from { opacity: 0; transform: translateX(30px); }
     to   { opacity: 1; transform: translateX(0); }
+}
+
+
+/* =============================================================================
+    Polly focus on Generate Button
+    ============================================================================= */
+
+.polly-gen-btn:focus {
+    outline: 6px solid #96BE2D;
+    box-shadow: 0 0 0 8px #4a9c5d;
 }

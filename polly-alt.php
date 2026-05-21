@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: .9.6
+ * Version: .9.10
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '.9.6' );
+define( 'POLLY_ALT_VERSION', '.9.10' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -157,14 +157,14 @@ add_action( 'manage_media_custom_column', function ( $column_name, $attachment_i
     $alt      = get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
     $field_id = 'polly-list-alt-' . absint( $attachment_id );
     ?>
-    <div class="gemini-list-field-container" data-id="<?php echo absint( $attachment_id ); ?>">
-        <div class="gemini-field-header">
-            <label class="gemini-custom-field-label" for="<?php echo esc_attr( $field_id ); ?>">Alt Text</label>
-            <span class="gemini-char-counter">0 characters</span>
+    <div class="polly-list-field-container" data-id="<?php echo absint( $attachment_id ); ?>">
+        <div class="polly-field-header">
+            <label class="polly-custom-field-label" for="<?php echo esc_attr( $field_id ); ?>">Alt Text</label>
+            <span class="polly-char-counter">0 characters</span>
         </div>
         <textarea
             id="<?php echo esc_attr( $field_id ); ?>"
-            class="gemini-list-alt-field"
+            class="polly-list-alt-field"
             placeholder="Please add alternative text for blind and low-vision users"
         ><?php echo esc_textarea( $alt ); ?></textarea>
     </div>

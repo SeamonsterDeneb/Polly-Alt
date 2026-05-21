@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v.9.6
+ * Polly Alt AI - Logic v.9.12
 **/
 (function () {
 
@@ -54,13 +54,13 @@
 
     function updateCharCounter(field) {
         if (!field) return;
-        let counter = document.querySelector(`.gemini-char-counter[data-for="${field.id}"]`);
+        let counter = document.querySelector(`.polly-char-counter[data-for="${field.id}"]`);
         if (!counter) {
             const ancestor = field.closest(
-                '.gemini-list-field-container, .gemini-btn-wrapper, .media-sidebar, ' +
+                '.polly-list-field-container, .polly-btn-wrapper, .media-sidebar, ' +
                 '.attachment-details, .setting, .media-item, .media-frame-side'
             );
-            counter = ancestor ? ancestor.querySelector('.gemini-char-counter') : null;
+            counter = ancestor ? ancestor.querySelector('.polly-char-counter') : null;
         }
         if (!counter) return;
         const len = (field.value || '').length;
@@ -69,7 +69,7 @@
     }
 
     function updateButtonLabel(field) {
-        const btn = document.querySelector(`.gemini-gen-btn[data-for="${field.id}"]`);
+        const btn = document.querySelector(`.polly-gen-btn[data-for="${field.id}"]`);
         if (btn) btn.textContent = field.value.trim() ? 'Preview and Refine' : 'Preview and Generate';
     }
 
@@ -151,17 +151,17 @@
         const missing = [];
         const items = document.querySelectorAll(
             '.media-item:not(:has(.media-item)), ' +
-            '.gemini-list-field-container:not(.media-item *):not(.attachment-details *), ' +
+            '.polly-list-field-container:not(.media-item *):not(.attachment-details *), ' +
             '.attachment-details:not(.media-item *), ' +
             '.setting[data-setting="alt"]'
         );
 
         items.forEach(item => {
             const textarea = item.querySelector(
-                '.gemini-custom-textarea, .gemini-list-alt-field, ' +
+                '.polly-custom-textarea, .polly-list-alt-field, ' +
                 'textarea[data-setting="alt"], #attachment-details-alt-text'
             );
-            const decoCheck = item.querySelector('.gemini-decorative-check');
+            const decoCheck = item.querySelector('.polly-decorative-check');
 
             if (textarea && !textarea.value.trim() && (!decoCheck || !decoCheck.checked)) {
                 missing.push(textarea);
@@ -198,8 +198,12 @@
         e.preventDefault();
         e.stopPropagation();
         const missing = checkCompliance();
-        const firstBtn = missing[0]?.closest('.gemini-list-field-container, .media-item')
-            ?.querySelector('.gemini-gen-btn');
+        if (missing.length === 0) {
+            uploadBtn.classList.remove('polly-upload-guarded');
+            return;
+        }
+        const firstBtn = missing[0]?.closest('.polly-list-field-container, .media-item')
+            ?.querySelector('.polly-gen-btn');
         showEnforcementModal(null, missing.length, 'Upload anyway', firstBtn);
     }, true);
 
@@ -210,19 +214,19 @@
 
         const overlay = document.createElement('div');
         overlay.id = 'polly-enforcement-overlay';
-        overlay.className = 'gemini-alt-modal-overlay';
+        overlay.className = 'polly-alt-modal-overlay';
 
         const modal = document.createElement('div');
         modal.id = 'polly-enforcement-modal';
-        modal.className = 'gemini-modal-alert';
+        modal.className = 'polly-modal-alert';
         modal.setAttribute('role', 'alertdialog');
         modal.setAttribute('aria-modal', 'true');
         modal.setAttribute('aria-labelledby', 'polly-alert-heading');
         modal.innerHTML = `
-            <div class="gemini-modal-header">
+            <div class="polly-modal-header">
                 <h3 id="polly-alert-heading">🦜 Just a moment, Captain!</h3>
             </div>
-            <div class="gemini-modal-body">
+            <div class="polly-modal-body">
                 <p style="font-size:15px; line-height:1.6;">
                     ${customMessage
                         ? customMessage
@@ -231,7 +235,7 @@
                            It only takes a moment — Polly can help!`
                     }
                 </p>
-                <div class="gemini-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
+                <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
                     <button id="polly-stay-btn" class="button button-primary" style="flex:1; height:50px; font-size:14px; font-weight:600;">
                         ✏️ Let's add some alt right now!
                     </button>
@@ -252,7 +256,7 @@
 
         modal.addEventListener('polly-close', () => {
             cleanup();
-            const target = focusTarget || document.querySelector('.gemini-gen-btn');
+            const target = focusTarget || document.querySelector('.polly-gen-btn');
             if (target) {
                 target.focus();
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -266,7 +270,7 @@
             if (onStay) {
                 onStay();
             } else {
-                const target = focusTarget || document.querySelector('.gemini-gen-btn');
+                const target = focusTarget || document.querySelector('.polly-gen-btn');
                 if (target) {
                     target.focus();
                     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -343,7 +347,7 @@
             initPolly();
 
             const firstNewBtn = newRows[0]
-                ?.querySelector('.gemini-gen-btn');
+                ?.querySelector('.polly-gen-btn');
 
                 const message = totalMissing > newCount
                     ? `You already had ${totalMissing - newCount} image${totalMissing - newCount !== 1 ? 's' : ''} needing alt text, and you've just added ${newCount} more. Want Polly to help?`
@@ -367,12 +371,12 @@
         notification.setAttribute('aria-modal', 'true');
         notification.setAttribute('aria-labelledby', 'polly-drop-heading');
         notification.innerHTML = `
-            <div class="gemini-modal-header">
+            <div class="polly-modal-header">
                 <h3 id="polly-drop-heading">🦜 Squawk! Alt text needed!</h3>
             </div>
-            <div class="gemini-modal-body">
+            <div class="polly-modal-body">
                 <p style="font-size:15px; line-height:1.6;">${message}</p>
-                <div class="gemini-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
+                <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
                     <button id="polly-drop-yes" class="button button-primary" style="flex:1; height:50px; font-size:14px; font-weight:600;">
                         ✏️ Yes, let's do it!
                     </button>
@@ -391,7 +395,7 @@
 
         document.getElementById('polly-drop-yes').onclick = () => {
             cleanup();
-            const target = firstBtn || document.querySelector('.gemini-gen-btn');
+            const target = firstBtn || document.querySelector('.polly-gen-btn');
             if (target) {
                 target.focus();
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -450,7 +454,7 @@
 
         const context = field.closest(
             '.media-sidebar, .attachment-details, .media-frame-side, .media-modal, ' +
-            '.media-item, tr, .gemini-list-field-container'
+            '.media-item, tr, .polly-list-field-container'
         ) || field.closest('.attachment-details')?.closest('.attachment-info, .save-ready')
         || field.closest('.save-ready');
 
@@ -510,15 +514,15 @@
             if (!details) return;
 
             const container = document.createElement('div');
-            container.className = 'gemini-list-field-container';
+            container.className = 'polly-list-field-container';
             container.dataset.id = attachmentId;
             container.innerHTML = `
-                <div class="gemini-field-header">
-                    <label class="gemini-custom-field-label">Alt Text</label>
-                    <span class="gemini-char-counter">0 characters</span>
+                <div class="polly-field-header">
+                    <label class="polly-custom-field-label">Alt Text</label>
+                    <span class="polly-char-counter">0 characters</span>
                 </div>
                 <textarea
-                    class="gemini-list-alt-field polly-uploader-field"
+                    class="polly-list-alt-field polly-uploader-field"
                     placeholder="Please add alternative text for blind and low-vision users"
                 ></textarea>
             `;
@@ -535,7 +539,7 @@
         '#attachment-details-alt-text',
         '.setting[data-setting="alt"] textarea',
         'textarea[data-setting="alt"]',
-        '.gemini-list-alt-field',
+        '.polly-list-alt-field',
     ].join(',');
 
     function initPolly() {
@@ -584,25 +588,25 @@
 
         // --- Header (label + character counter) ---
         const existingHeader = field.closest(
-            '.gemini-list-field-container, .media-item, .setting'
-        )?.querySelector('.gemini-field-header');
+            '.polly-list-field-container, .media-item, .setting'
+        )?.querySelector('.polly-field-header');
 
         const nativeLabel = field.closest('.setting')?.querySelector('label.name');
 
         if (!existingHeader && !nativeLabel) {
             const header = document.createElement('div');
-            header.className = 'gemini-field-header';
+            header.className = 'polly-field-header';
             header.innerHTML = `
-                <label class="gemini-custom-field-label" for="${internalId}">Alt Text</label>
-                <span class="gemini-char-counter" data-for="${internalId}">0 characters</span>
+                <label class="polly-custom-field-label" for="${internalId}">Alt Text</label>
+                <span class="polly-char-counter" data-for="${internalId}">0 characters</span>
             `;
             parent.insertBefore(header, field);
         } else {
-            let counter = existingHeader?.querySelector('.gemini-char-counter');
+            let counter = existingHeader?.querySelector('.polly-char-counter');
             if (!counter) {
                 // Native label exists but no counter yet — inject one after the label
                 counter = document.createElement('span');
-                counter.className = 'gemini-char-counter';
+                counter.className = 'polly-char-counter';
                 counter.dataset.for = internalId;
                 counter.textContent = '0 characters';
                 const labelEl = nativeLabel || existingHeader;
@@ -614,16 +618,16 @@
 
         // --- Wrapper + Generate button ---
         const wrapper = document.createElement('div');
-        wrapper.className = 'gemini-btn-wrapper';
+        wrapper.className = 'polly-btn-wrapper';
         parent.insertBefore(wrapper, field);
         wrapper.appendChild(field);
 
         const actionRow = document.createElement('div');
-        actionRow.className = 'gemini-action-row';
+        actionRow.className = 'polly-action-row';
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'gemini-gen-btn';
+        btn.className = 'polly-gen-btn';
         btn.dataset.for = internalId;
         btn.textContent = 'Preview and Generate';
         btn.onclick = (e) => {
@@ -644,7 +648,7 @@
 
         // --- Standards advisor ---
         const advisor = document.createElement('span');
-        advisor.className = 'gemini-standards-text';
+        advisor.className = 'polly-standards-text';
         advisor.textContent =
             'Alt text should describe what sighted visitors see in the image. ' +
             'Aim for around 125 characters. Avoid starting with "image of" or "photo of".';
@@ -652,18 +656,18 @@
 
         // --- Decorative toggle ---
         const decoWrap = document.createElement('div');
-        decoWrap.className = 'gemini-decorative-wrap';
+        decoWrap.className = 'polly-decorative-wrap';
         const decoId = 'polly-deco-' + internalId;
         decoWrap.innerHTML = `
             <label for="${decoId}">
-                <input type="checkbox" id="${decoId}" class="gemini-decorative-check">
+                <input type="checkbox" id="${decoId}" class="polly-decorative-check">
                 Decorative
             </label>
             <span class="decorative-notice">Blind and low-vision users don't need a description of this image.</span>
         `;
         advisor.parentNode.insertBefore(decoWrap, advisor.nextSibling);
 
-        const decoCheck = decoWrap.querySelector('.gemini-decorative-check');
+        const decoCheck = decoWrap.querySelector('.polly-decorative-check');
         decoCheck.addEventListener('change', () => {
             if (decoCheck.checked) {
                 field.value = '';
@@ -712,7 +716,7 @@
         }
     }
     async function triggerGeneration(field, attachmentId) {
-        const btn = document.querySelector(`.gemini-gen-btn[data-for="${field.id}"]`);
+        const btn = document.querySelector(`.polly-gen-btn[data-for="${field.id}"]`);
         const originalLabel = btn.textContent;
         btn.textContent = 'Thinking…';
         btn.disabled = true;
@@ -777,7 +781,7 @@
             `You are an accessibility expert writing alt text for a web image. ` +
             `Generate exactly ${config.choiceCount} distinct alt text variations following these rules:\n\n` +
             `RULES:\n` +
-            `- Each alt text MUST be between 100-125 characters (count carefully — this is a hard requirement)\n` +
+            `- Each alt text should be as close to 125 characters as possible without going over\n` +
             `- Do NOT begin with "image of", "photo of", "picture of", or similar\n` +
             `- Write in plain language, present tense, active voice\n` +
             `- Include only what is visible — no interpretation or assumptions\n\n` +
@@ -872,27 +876,27 @@
     // -------------------------------------------------------------------------
 
     function showChoiceModal(choices, field, original, imgSrc, triggerBtn, onSelect) {
-        document.getElementById('gemini-alt-modal-overlay')?.remove();
-        document.getElementById('gemini-alt-modal')?.remove();
+        document.getElementById('polly-alt-modal-overlay')?.remove();
+        document.getElementById('polly-alt-modal')?.remove();
 
         const overlay = document.createElement('div');
-        overlay.id = 'gemini-alt-modal-overlay';
+        overlay.id = 'polly-alt-modal-overlay';
 
         const modal = document.createElement('div');
-        modal.id = 'gemini-alt-modal';
+        modal.id = 'polly-alt-modal';
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
         modal.setAttribute('aria-label', 'Choose Alt Text');
 
         modal.innerHTML = `
-            <div class="gemini-modal-image-container">
+            <div class="polly-modal-image-container">
                 <img src="${imgSrc}" alt="">
             </div>
-            <div class="gemini-modal-header"><h3>🦜 Choose Alt Text</h3></div>
-            <div class="gemini-modal-body"></div>
+            <div class="polly-modal-header"><h3>🦜 Choose Alt Text</h3></div>
+            <div class="polly-modal-body"></div>
         `;
 
-        const imgContainer = modal.querySelector('.gemini-modal-image-container');
+        const imgContainer = modal.querySelector('.polly-modal-image-container');
         const img = imgContainer.querySelector('img');
         img.onload = () => {
             imgContainer.scrollTop = (imgContainer.scrollHeight - imgContainer.clientHeight) / 2;
@@ -902,7 +906,7 @@
             imgContainer.scrollTop = (imgContainer.scrollHeight - imgContainer.clientHeight) / 2;
         }
 
-        const body = modal.querySelector('.gemini-modal-body');
+        const body = modal.querySelector('.polly-modal-body');
 
         const options = [];
         if (original) options.push({ alt: original, label: 'ORIGINAL', explanation: 'Your current text.' });
@@ -910,19 +914,19 @@
 
         options.forEach(opt => {
             const item = document.createElement('div');
-            item.className = 'gemini-choice-item';
+            item.className = 'polly-choice-item';
 
             const tag = document.createElement('span');
-            tag.className = 'gemini-choice-tag';
+            tag.className = 'polly-choice-tag';
             tag.style.color = opt.label === 'ORIGINAL' ? '#666' : '#2271b1';
             tag.textContent = opt.label;
 
             const content = document.createElement('div');
-            content.className = 'gemini-choice-content';
+            content.className = 'polly-choice-content';
             content.textContent = opt.alt;
 
             const charCount = document.createElement('span');
-            charCount.className = 'gemini-choice-char-count';
+            charCount.className = 'polly-choice-char-count';
             charCount.textContent = `${opt.alt.length} characters`;
             charCount.classList.toggle('over-limit', opt.alt.length > 125);
 
@@ -932,21 +936,21 @@
 
             if (opt.explanation) {
                 const expl = document.createElement('div');
-                expl.className = 'gemini-choice-explanation';
+                expl.className = 'polly-choice-explanation';
                 expl.textContent = opt.explanation;
                 item.appendChild(expl);
             }
 
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
-            editBtn.className = 'gemini-modal-edit-btn';
+            editBtn.className = 'polly-modal-edit-btn';
             editBtn.textContent = 'Edit';
             editBtn.dataset.state = 'edit';
             item.appendChild(editBtn);
 
             item.onclick = (e) => {
                 if (e.target === editBtn) return;
-                const textarea = item.querySelector('.gemini-choice-textarea');
+                const textarea = item.querySelector('.polly-choice-textarea');
                 const finalVal = textarea ? textarea.value : content.textContent;
                 field.value = finalVal;
                 field.classList.remove('missing-alt');
@@ -961,7 +965,7 @@
                 e.stopPropagation();
                 if (editBtn.dataset.state === 'edit') {
                     const textarea = document.createElement('textarea');
-                    textarea.className = 'gemini-choice-textarea';
+                    textarea.className = 'polly-choice-textarea';
                     textarea.value = content.textContent;
                     item.replaceChild(textarea, content);
                     editBtn.textContent = 'Apply';
@@ -984,18 +988,18 @@
 
        // --- Decorative option ---
         const modalDecoWrap = document.createElement('div');
-        modalDecoWrap.className = 'gemini-decorative-wrap';
+        modalDecoWrap.className = 'polly-decorative-wrap';
         const modalDecoId = 'polly-modal-deco-' + field.id;
         modalDecoWrap.innerHTML = `
             <label for="${modalDecoId}">
-                <input type="checkbox" id="${modalDecoId}" class="gemini-modal-decorative-check">
+                <input type="checkbox" id="${modalDecoId}" class="polly-modal-decorative-check">
                 This image is decorative
             </label>
             <span class="decorative-notice">Blind and low-vision users don't need a description of this image. Selecting this will clear the alt text field.</span>
         `;
         body.appendChild(modalDecoWrap);
 
-        const modalDecoCheck = modalDecoWrap.querySelector('.gemini-modal-decorative-check');
+        const modalDecoCheck = modalDecoWrap.querySelector('.polly-modal-decorative-check');
         modalDecoCheck.addEventListener('change', () => {
             if (modalDecoCheck.checked) {
                 field.value = '';
@@ -1020,7 +1024,7 @@
 
         const cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
-        cancelBtn.className = 'gemini-footer-btn';
+        cancelBtn.className = 'polly-footer-btn';
         cancelBtn.textContent = 'Keep Current & Close';
         cancelBtn.onclick = cleanup;
         body.appendChild(cancelBtn);
@@ -1121,17 +1125,17 @@
 
             // --- Counter ---
             const counter = document.createElement('span');
-            counter.className = 'gemini-char-counter';
+            counter.className = 'polly-char-counter';
             counter.textContent = `${field.value.length} characters`;
             counter.classList.toggle('over-limit', field.value.length > 125);
             altLabel.parentNode.insertBefore(counter, altLabel.nextSibling);
 
             // --- Generate button ---
             const actionRow = document.createElement('div');
-            actionRow.className = 'gemini-action-row';
+            actionRow.className = 'polly-action-row';
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'gemini-gen-btn';
+            btn.className = 'polly-gen-btn';
             btn.textContent = field.value.trim() ? 'Preview and Refine' : 'Preview and Generate';
             btn.onclick = (e) => {
                 e.preventDefault();
@@ -1149,18 +1153,18 @@
 
             // --- Decorative checkbox ---
             const decoWrap = document.createElement('div');
-            decoWrap.className = 'gemini-decorative-wrap';
+            decoWrap.className = 'polly-decorative-wrap';
             const decoId = 'polly-gutenberg-deco-' + (getAttachmentId() || Math.random().toString(36).slice(2));
             decoWrap.innerHTML = `
                 <label for="${decoId}">
-                    <input type="checkbox" id="${decoId}" class="gemini-decorative-check">
+                    <input type="checkbox" id="${decoId}" class="polly-decorative-check">
                     Decorative
                 </label>
                 <span class="decorative-notice">Blind and low-vision users don't need a description of this image.</span>
             `;
             actionRow.after(decoWrap);
 
-            const decoCheck = decoWrap.querySelector('.gemini-decorative-check');
+            const decoCheck = decoWrap.querySelector('.polly-decorative-check');
 
             // Sync initial decorative state from block attributes
             const initialBlock = getBlockData();
@@ -1361,8 +1365,8 @@
             [...m.addedNodes].some(n => {
                 if (n.nodeType !== 1) return false;
                 return (
-                    n.matches?.('.media-item, .gemini-list-field-container, .attachment-details, .media-frame, [data-setting="alt"]') ||
-                    n.querySelector?.('.media-item, .gemini-list-alt-field, [data-setting="alt"], #attachment-details-alt-text')
+                    n.matches?.('.media-item, .polly-list-field-container, .attachment-details, .media-frame, [data-setting="alt"]') ||
+                    n.querySelector?.('.media-item, .polly-list-alt-field, [data-setting="alt"], #attachment-details-alt-text')
                 );
             })
         );
