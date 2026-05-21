@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v.9.16
+ * Polly Alt AI - Logic v0.9.21
 **/
 (function () {
 
@@ -874,12 +874,19 @@
             let errorMsg = '🦜 Polly Error: ' + err.message;
             
             if (isJson) {
-                errorMsg = "🦜 Polly Error: Sorry, maybe the AI model is still getting its sea-legs because it sent back a scrambled message! Please try clicking the button again in a few moments.";
+                errorMsg = "🦜 Polly Error: Blimey, the AI model is still getting its sea-legs and sent back a scrambled message! Please try clicking the button again in a few moments.";
             } else if (isSize) {
                 errorMsg += '\n\nTip: If your image is very large, try optimising it first (under 1MB works best).';
             }
             
             alert(errorMsg);
+            
+            // Queue the focus shift at the end of the event loop so the browser can return to the page body first
+            if (btn) {
+                setTimeout(() => {
+                    btn.focus({ focusVisible: true });
+                }, 50);
+            }
         } finally {
             btn.textContent = originalLabel;
             btn.disabled = false;
@@ -931,6 +938,12 @@
             const item = document.createElement('div');
             item.className = 'polly-choice-item';
 
+            // Create the main semantic selection button that covers the card
+            const selectBtn = document.createElement('button');
+            selectBtn.type = 'button';
+            selectBtn.className = 'polly-choice-select-btn';
+            selectBtn.setAttribute('aria-label', `Select ${opt.label}: ${opt.alt}`);
+
             const tag = document.createElement('span');
             tag.className = 'polly-choice-tag';
             tag.style.color = opt.label === 'ORIGINAL' ? '#666' : '#2271b1';
@@ -945,16 +958,19 @@
             charCount.textContent = `${opt.alt.length} characters`;
             charCount.classList.toggle('over-limit', opt.alt.length > 125);
 
-            item.appendChild(tag);
-            item.appendChild(content);
-            item.appendChild(charCount);
+            // Assemble the structural contents inside the main selection button
+            selectBtn.appendChild(tag);
+            selectBtn.appendChild(content);
+            selectBtn.appendChild(charCount);
 
             if (opt.explanation) {
                 const expl = document.createElement('div');
                 expl.className = 'polly-choice-explanation';
                 expl.textContent = opt.explanation;
-                item.appendChild(expl);
+                selectBtn.appendChild(expl);
             }
+
+            item.appendChild(selectBtn);
 
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
@@ -963,8 +979,8 @@
             editBtn.dataset.state = 'edit';
             item.appendChild(editBtn);
 
-            item.onclick = (e) => {
-                if (e.target === editBtn) return;
+            // Selection action triggers when clicking/activating the big button layout
+            selectBtn.onclick = () => {
                 const textarea = item.querySelector('.polly-choice-textarea');
                 const finalVal = textarea ? textarea.value : content.textContent;
                 field.value = finalVal;
@@ -982,9 +998,12 @@
                     const textarea = document.createElement('textarea');
                     textarea.className = 'polly-choice-textarea';
                     textarea.value = content.textContent;
-                    item.replaceChild(textarea, content);
+                    
+                    // Put textarea inside the item container, but keep it accessible
+                    item.appendChild(textarea);
                     editBtn.textContent = 'Apply';
                     editBtn.dataset.state = 'apply';
+                    
                     textarea.addEventListener('input', () => {
                         charCount.textContent = `${textarea.value.length} characters`;
                         charCount.classList.toggle('over-limit', textarea.value.length > 125);
@@ -994,7 +1013,8 @@
                     });
                     textarea.focus();
                 } else {
-                    item.click();
+                    // Simulates clicking the underlying selection button with the modified text
+                    selectBtn.click();
                 }
             };
 
@@ -1060,6 +1080,15 @@
 
         modal.setAttribute('tabindex', '-1');
         modal.focus();
+        
+        // Find the very first suggestion choice button and force visible focus onto it immediately
+        const firstChoice = body.querySelector('.polly-choice-select-btn');
+        if (firstChoice) {
+            firstChoice.focus({ focusVisible: true });
+        } else {
+            document.getElementById('polly-alt-modal-overlay').focus();
+        }
+        
         trapFocus(modal);
     }
     // -------------------------------------------------------------------------
