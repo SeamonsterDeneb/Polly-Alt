@@ -972,6 +972,21 @@
 
             item.appendChild(selectBtn);
 
+            // Conditional "Make it Fit" button for options over 125 characters
+            if (opt.alt.length > 125) {
+                const fitBtn = document.createElement('button');
+                fitBtn.type = 'button';
+                fitBtn.className = 'polly-modal-fit-btn';
+                fitBtn.style.marginRight = '5px'; // Quick spacing next to Edit button
+                fitBtn.textContent = 'Make it Fit';
+                
+                fitBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    alert(`Testing "Make it Fit" on text: "${opt.alt}"`);
+                };
+                item.appendChild(fitBtn);
+            }
+
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'polly-modal-edit-btn';

@@ -14,8 +14,87 @@ define( 'POLLY_ALT_VERSION', '0.9.21' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
-// 1. Settings Page
+// 1. Settings Page & Dynamic Model Fetching
 // =============================================================================
+
+/**
+ * Reach out to Google Gemini to fetch all active multimodal-capable models.
+ * Results are cached for 24 hours to keep the WP admin screen fast.
+ */
+function polly_alt_get_available_models() {
+    $api_key = get_option( 'polly_alt_api_key', '' );
+    if ( empty( $api_key ) ) {
+        return [];
+    }
+
+    $transient_key = 'polly_alt_models_list';
+    $cached = get_transient( $transient_key );
+    if ( false !== $cached ) {
+        return $cached;
+    }
+
+    // Call the v1beta models endpoint to discover what endpoints are currently live
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' . esc_attr( $api_key );
+    $response = wp_remote_get( $url, [ 'timeout' => 15 ] );
+
+    // Fallback if the network call fails
+    if ( is_wp_error( $response ) ) {
+        return [
+            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback - API Connection Error)',
+        ];
+    }
+
+    $body = wp_remote_retrieve_body( $response );
+    $data = json_decode( $body, true );
+
+    if ( empty( $data['models'] ) || ! is_array( $data['models'] ) ) {
+        return [
+            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback - Invalid API Response)',
+        ];
+    }
+
+    $models = [];
+    foreach ( $data['models'] as $m ) {
+        if ( empty( $m['name'] ) || empty( $m['supportedGenerationMethods'] ) ) {
+            continue;
+        }
+
+        // We only want models that support generating content (multimodal images)
+        if ( ! in_array( 'generateContent', $m['supportedGenerationMethods'], true ) ) {
+            continue;
+        }
+
+        $clean_name = str_replace( 'models/', '', $m['name'] );
+
+        // Exclude internal tools, embedding, or text-only legacy API endpoints
+        if ( 
+            strpos( $clean_name, 'embedding' ) !== false || 
+            strpos( $clean_name, 'text' ) !== false || 
+            strpos( $clean_name, 'aqa' ) !== false ||
+            strpos( $clean_name, 'tuning' ) !== false
+        ) {
+            continue;
+        }
+
+        $display_name = ! empty( $m['displayName'] ) ? $m['displayName'] : $clean_name;
+        $models[ $clean_name ] = $display_name;
+    }
+
+    if ( empty( $models ) ) {
+        $models = [
+            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback)',
+        ];
+    }
+
+    // Cache the verified endpoints for 24 hours
+    set_transient( $transient_key, $models, DAY_IN_SECONDS );
+    return $models;
+}
+
+// Automatically clear the model cache if the user updates their API Key
+add_action( 'update_option_polly_alt_api_key', function () {
+    delete_transient( 'polly_alt_models_list' );
+} );
 
 add_action( 'admin_menu', function () {
     add_options_page(
@@ -70,17 +149,49 @@ add_action( 'admin_init', function () {
     }, 'polly-alt-settings', 'polly_main_section' );
 
     add_settings_field( 'model', 'AI Model', function () {
-        $val = get_option( 'polly_alt_model', 'gemini-2.0-flash' );
+        $models = polly_alt_get_available_models();
+
+        // Safe static fallbacks if the API call fails or key is missing
+        if ( empty( $models ) ) {
+            $models = [
+                'gemini-3.5-flash' => 'Gemini 3.5 Flash',
+                'gemini-1.5-pro'   => 'Gemini 1.5 Pro',
+            ];
+        }
+
+        // --- Dynamic Default Engine ---
+        // 1. Look for the absolute newest active flash model to mark as recommended
+        $recommended_model = '';
+        foreach ( array_keys( $models ) as $model_key ) {
+            if ( strpos( $model_key, '-flash' ) !== false ) {
+                // If we haven't found a flash model yet, or this one has a higher version string
+                if ( empty( $recommended_model ) || version_compare( $model_key, $recommended_model, '>' ) ) {
+                    $recommended_model = $model_key;
+                }
+            }
+        }
+        
+        // 2. Fall back to the first available model if no explicitly named flash model exists
+        if ( empty( $recommended_model ) ) {
+            $model_keys = array_keys( $models );
+            $recommended_model = ! empty( $model_keys ) ? $model_keys[0] : '';
+        }
+
+        // 3. Check the database, defaulting to our dynamically calculated recommendation
+        $current_model = get_option( 'polly_alt_model', $recommended_model );
         ?>
-        <input
-            type="text"
-            name="polly_alt_model"
-            value="<?php echo esc_attr( $val ); ?>"
-            placeholder="gemini-2.0-flash"
-            class="regular-text"
-        >
+        <select name="polly_alt_model" id="polly-alt-model" style="min-width: 250px;">
+            <?php foreach ( $models as $value => $label ) : 
+                // Dynamically append the label to the live recommended model
+                $display_label = ( $recommended_model === $value ) ? $label . ' (Recommended)' : $label;
+                ?>
+                <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $current_model, $value ); ?>>
+                    <?php echo esc_html( $display_label ); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
         <p class="description">
-            The Gemini model to use. <code>gemini-2.0-flash</code> is recommended for speed and cost.
+            Select the active Gemini model for image analysis. This list stays updated dynamically via Google's live endpoints.
         </p>
         <?php
     }, 'polly-alt-settings', 'polly_main_section' );
@@ -141,6 +252,11 @@ add_filter( 'plugin_action_links_' . plugin_basename( POLLY_ALT_PLUGIN_FILE ), f
     array_unshift( $links, $settings_link );
     return $links;
 } );
+
+// Clear the model list cache instantly if the API key setting is updated.
+add_action( 'update_option_polly_alt_api_key', function() {
+    delete_transient( 'polly_alt_models_list' );
+});
 
 // =============================================================================
 // 2. Media Library List View Column
@@ -250,7 +366,8 @@ function polly_alt_enqueue_assets() {
     );
 
     wp_localize_script( 'polly-alt-script', 'pollyConfig', [
-        'model'              => get_option( 'polly_alt_model', 'gemini-2.0-flash' ),
+        // Dynamically grab the exact model from the option database, defaulting to a live stable model
+        'model'              => get_option( 'polly_alt_model', 'gemini-3.5-flash' ),
         'choiceCount'        => (int) get_option( 'polly_alt_choices', 3 ),
         'removeTitle'        => (bool) get_option( 'polly_alt_remove_title', 0 ),
         'includeExplanation' => (bool) get_option( 'polly_alt_include_explanation', 1 ),
