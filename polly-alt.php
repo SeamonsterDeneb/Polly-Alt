@@ -108,9 +108,47 @@ add_action( 'admin_menu', function () {
 
 function polly_alt_settings_page() {
     ?>
-    <div class="wrap">
+    <div class="wrap" style="max-width: 850px;">
         <h1>🦜 Polly Alt AI Settings</h1>
-        <form method="post" action="options.php">
+        
+        <div class="welcome-panel" style="padding: 20px; margin-top: 20px; background: #fff; border: 1px solid #ccd0d4; border-radius: 4px;">
+            <div class="welcome-panel-content">
+                <h2>🏴‍☠️ The Captain's Guide to Polly Alt</h2>
+                <p class="about-description" style="font-size: 14px; margin-bottom: 15px;">
+                    Welcome aboard! Polly Alt helps you write great descriptive alt text while training your crew on accessibility standards. To get the absolute most out of Polly, keep these parameters in mind:
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                    <div>
+                        <strong style="display:block; font-size:14px; margin-bottom:5px;">📋 Use the Media Library "List View"</strong>
+                        <p style="margin:0; font-size:13px; line-height:1.5; color:#50575e;">
+                            Polly anchors directly to WordPress text fields. In the main Media Library, **you must switch from Thumbnail Grid to List View** to see the custom Alt Text column and generation buttons.
+                        </p>
+                    </div>
+                    <div>
+                        <strong style="display:block; font-size:14px; margin-bottom:5px;">✍️ The 125-Character Budget</strong>
+                        <p style="margin:0; font-size:13px; line-height:1.5; color:#50575e;">
+                            Screen readers typically announce image descriptions in chunks. Polly optimizes suggestions to stay close to this ideal budget. Avoid starting with repetitive phrases like "image of" or "photo of."
+                        </p>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                    <div>
+                        <strong style="display:block; font-size:14px; margin-bottom:5px;">🪵 Core Editor Compatibility</strong>
+                        <p style="margin:0; font-size:13px; line-height:1.5; color:#50575e;">
+                            Polly tracks your context inside the **Gutenberg Block Editor** sidebar and **Elementor Media Panels** seamlessly. Just click an image block to trigger Polly's interface.
+                        </p>
+                    </div>
+                    <div>
+                        <strong style="display:block; font-size:14px; margin-bottom:5px;">🛡️ Intentional Friction</strong>
+                        <p style="margin:0; font-size:13px; line-height:1.5; color:#50575e;">
+                            The compliance guards will deliberately check your work when uploading files or exiting. It's meant to make adding alt text easier than leaving it empty!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" action="options.php" style="margin-top: 30px;">
             <?php
             settings_fields( 'polly_alt_group' );
             do_settings_sections( 'polly-alt-settings' );
@@ -418,3 +456,45 @@ add_action('wp_ajax_polly_gemini_proxy', function() {
 
     wp_send_json_success($data);
 });
+
+// Display a helpful hint on the Media Library screen if users are on the grid view
+add_action( 'admin_notices', function () {
+    $screen = get_current_screen();
+    if ( ! $screen || 'upload' !== $screen->base ) {
+        return;
+    }
+
+    // Check if user is on the thumbnail/grid view (WordPress default layout)
+    if ( isset( $_GET['mode'] ) && 'list' === $_GET['mode'] ) {
+        return;
+    }
+
+    // Don't show if they've already dismissed it
+    $user_id = get_current_user_id();
+    if ( get_user_meta( $user_id, 'dismissed_polly_view_notice', true ) ) {
+        return;
+    }
+    ?>
+    <div class="notice notice-info is-dismissible polly-view-hint-notice">
+        <p>
+            🦜 <strong>Polly Alt Tip:</strong> To generate and tweak your alt text values right inside the Media Library dashboard, switch over to the 
+            <a href="<?php echo esc_url( admin_url( 'upload.php?mode=list' ) ); ?>"><strong>List View layout</strong></a>! 
+            Polly also works automatically when you click images inside the Gutenberg and Elementor post editors.
+        </p>
+    </div>
+    <script>
+        jQuery(document).on('click', '.polly-view-hint-notice .notice-dismiss', function() {
+            wp.ajax.post('polly_dismiss_view_notice', {
+                nonce: '<?php echo wp_create_nonce("polly_view_nonce"); ?>'
+            });
+        });
+    </script>
+    <?php
+} );
+
+// AJAX endpoint to save the user's dismissal choice
+add_action( 'wp_ajax_polly_dismiss_view_notice', function () {
+    check_ajax_referer( 'polly_view_nonce', 'nonce' );
+    update_user_meta( get_current_user_id(), 'dismissed_polly_view_notice', true );
+    wp_send_json_success();
+} );
