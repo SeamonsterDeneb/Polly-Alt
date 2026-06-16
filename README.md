@@ -1,8 +1,8 @@
-# 🦜 Polly Alt AI
+# 🦜 Polly Alt
 
 Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI. 
 
-Polly Alt AI is an accessibility-first WordPress plugin that analyzes media library uploads using live Gemini AI models to generate concise, active-voice, descriptive alternative text (alt text) variations around 125 characters. It includes automated compliance guards to prevent publishing or leaving media screens with missing alt text, keyboard-friendly selection menus, and educational context for administrators.
+Polly Alt is an accessibility-first WordPress plugin that analyzes media library uploads using live Gemini AI models to generate concise, active-voice, descriptive alternative text (alt text) variations around 125 characters. It includes automated compliance guards to prevent publishing or leaving media screens with missing alt text, keyboard-friendly selection menus, and educational context for administrators.
 
 ---
 
@@ -22,7 +22,7 @@ Thank you for helping test Polly Alt! You do not need to build or compile anythi
 4. Once installed, click **Activate Plugin**.
 
 ### 3. Get Your Free Gemini API Key (No Credit Card Required!)
-1. Go to **Settings > Polly Alt AI** in your WordPress sidebar.
+1. Go to **Settings > Polly Alt** in your WordPress sidebar.
 2. Click the link to get a free key via [Google AI Studio](https://aistudio.google.com/app/apikey).
 3. **Note:** Google AI Studio offers a completely free tier (up to 15 requests per minute). **You do not need a Google Cloud Billing account or a credit card** to get a key and use this plugin for testing!
 4. Paste your key into the settings page, choose your preferred model from the live dropdown menu, and hit **Save Changes**.
