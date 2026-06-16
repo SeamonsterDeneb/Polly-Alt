@@ -63,9 +63,159 @@
             counter = ancestor ? ancestor.querySelector('.polly-char-counter') : null;
         }
         if (!counter) return;
+        
         const len = (field.value || '').length;
         counter.textContent = `${len} characters`;
-        counter.classList.toggle('over-limit', len > 125);
+        
+        const isOver = len > 125;
+        counter.classList.toggle('over-limit', isOver);
+
+        // Manage inline "Make it Fit" button for standard workspace fields
+        let inlineFitBtn = counter.parentNode.querySelector('.polly-inline-fit-btn');
+        
+        if (isOver && !inlineFitBtn && !field.disabled) {
+            inlineFitBtn = document.createElement('button');
+            inlineFitBtn.type = 'button';
+            inlineFitBtn.className = 'polly-inline-fit-btn';
+            inlineFitBtn.textContent = 'Make it Fit';
+            inlineFitBtn.style.marginLeft = '10px';
+            inlineFitBtn.onclick = (e) => {
+                e.preventDefault();
+                triggerInlineFit(field, inlineFitBtn, counter);
+            };
+            counter.insertAdjacentElement('afterend', inlineFitBtn);
+        } else if (!isOver && inlineFitBtn) {
+            inlineFitBtn.remove();
+        }
+    }
+
+    async function triggerInlineFit(field, btn, counter) {
+        const originalLabel = btn.textContent;
+        btn.textContent = 'Fitting…';
+        btn.disabled = true;
+
+        const oldText = field.value; // Capture the uncompressed version securely
+
+        const fitPrompt = 
+            `You are an accessibility expert. Compress the following alternative text so it fits perfectly under a strict 125-character budget. ` +
+            `It must remain descriptive, active-voice, and retain the primary visual focus. ` +
+            `Return ONLY the refined alt text string under 125 characters, with no extra commentary or markdown code blocks.\n\n` +
+            `Text to compress: "${oldText}"`;
+
+        const fitPayload = JSON.stringify({
+            contents: [{ parts: [{ text: fitPrompt }] }]
+        });
+
+        const fitForm = new FormData();
+        fitForm.append('action', 'polly_gemini_proxy');
+        fitForm.append('nonce', config.nonce);
+        fitForm.append('model', config.model);
+        fitForm.append('payload', fitPayload);
+
+        try {
+            const proxyData = await geminiRequest(fitForm);
+            const data = proxyData.data;
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                throw new Error('Unexpected response shape from Gemini API.');
+            }
+            
+            let refinedText = data.candidates[0].content.parts[0].text.trim();
+            refinedText = refinedText.replace(/^["']|["']$/g, '').trim();
+
+            // 1. Update the primary field value safely with the clean version
+            field.value = refinedText;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            const id = resolveAttachmentId(field);
+            if (id) {
+                saveAltText(id, refinedText);
+            }
+
+            // 2. Clear out the loading button
+            btn.remove();
+            updateCharCounter(field);
+            updateButtonLabel(field);
+
+            // 3. Inject the Side-by-Side Revision Assistant box directly below the control layout
+            renderRevisionAssistant(field, oldText, refinedText);
+
+        } catch (err) {
+            alert('Your text got caught in a squall! Polly Error: ' + err.message);
+            btn.textContent = originalLabel;
+            btn.disabled = false;
+        }
+    }
+
+    function renderRevisionAssistant(field, oldText, newText) {
+        // Clear out any old revision assistant boxes attached to this specific field context
+        const parentContainer = field.closest('.polly-list-field-container, .components-base-control, .setting, .media-sidebar');
+        if (!parentContainer) return;
+        
+        parentContainer.querySelector('.polly-revision-assistant')?.remove();
+
+        const assistant = document.createElement('div');
+        assistant.className = 'polly-revision-assistant';
+        assistant.style.cssText = 'margin-top:12px; padding:10px; background:#f6f7f7; border:1px solid #c3c4c7; border-left:4px solid #2271b1; border-radius:4px; font-size:12px;';
+        
+        assistant.innerHTML = `
+            <div style="font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span>🦜 Polly Revision Assistant</span>
+                <button type="button" class="polly-dismiss-assistant" style="background:none; border:none; color:#646970; cursor:pointer; font-size:14px;">&times;</button>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:8px;">
+                <div style="background:#fff; padding:6px; border:1px solid #dcdcde; border-radius:3px;">
+                    <div style="color:#646970; font-weight:600; font-size:10px; margin-bottom:3px; text-transform:uppercase;">Old Draft (${oldText.length} ch)</div>
+                    <div class="polly-old-text-src" style="color:#1d2327; margin-bottom:5px; word-break:break-word;">${escapeHtml(oldText)}</div>
+                    <button type="button" class="polly-copy-old-btn button button-small" style="font-size:11px; height:22px; line-height:20px;">Copy Old</button>
+                </div>
+                <div style="background:#fff; padding:6px; border:1px solid #dcdcde; border-radius:3px;">
+                    <div style="color:#2271b1; font-weight:600; font-size:10px; margin-bottom:3px; text-transform:uppercase;">New Fit (${newText.length} ch)</div>
+                    <div style="color:#1d2327; margin-bottom:5px; word-break:break-word;">${escapeHtml(newText)}</div>
+                    <button type="button" class="polly-revert-btn button button-small" style="font-size:11px; height:22px; line-height:20px; color:#b32d2e; border-color:#b32d2e;">Revert to Old</button>
+                </div>
+            </div>
+            <p style="margin:0; color:#646970; font-size:11px; line-height:1.4;">Use the snippet targets above to copy visual items from your previous draft back into your active description field if needed.</p>
+        `;
+
+        // Simple local string escaping to protect DOM parsing limits
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        // Wire up interactions inside the block workspace
+        assistant.querySelector('.polly-dismiss-assistant').onclick = () => assistant.remove();
+
+        // Copy Old text straight to clipboard for quick picking
+        assistant.querySelector('.polly-copy-old-btn').onclick = (e) => {
+            e.preventDefault();
+            navigator.clipboard.writeText(oldText).then(() => {
+                const copyBtn = assistant.querySelector('.polly-copy-old-btn');
+                const origLabel = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = origLabel; }, 1500);
+            });
+        };
+
+        // Full restoration fallback
+        assistant.querySelector('.polly-revert-btn').onclick = (e) => {
+            e.preventDefault();
+            field.value = oldText;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            const id = resolveAttachmentId(field);
+            if (id) {
+                saveAltText(id, oldText);
+            }
+            assistant.remove();
+        };
+
+        // Inject the block cleanly at the bottom of the element control workspace
+        actionRow = field.closest('.polly-list-field-container, .components-base-control, .setting, .media-sidebar').querySelector('.polly-action-row') || field.nextSibling;
+        if (actionRow && actionRow.parentNode) {
+            actionRow.parentNode.insertBefore(assistant, actionRow.nextSibling);
+        } else {
+            field.after(assistant);
+        }
     }
 
     function updateButtonLabel(field) {
@@ -980,9 +1130,65 @@
                 fitBtn.style.marginRight = '5px'; // Quick spacing next to Edit button
                 fitBtn.textContent = 'Make it Fit';
                 
-                fitBtn.onclick = (e) => {
+                fitBtn.onclick = async (e) => {
                     e.stopPropagation();
-                    alert(`Testing "Make it Fit" on text: "${opt.alt}"`);
+                    
+                    const originalFitLabel = fitBtn.textContent;
+                    fitBtn.textContent = 'Fitting…';
+                    fitBtn.disabled = true;
+
+                    // Text-only prompt for rapid, inexpensive compression
+                    const fitPrompt = 
+                        `You are an accessibility expert. Compress the following alternative text so it fits perfectly under a strict 125-character budget. ` +
+                        `It must remain descriptive, active-voice, and retain the primary visual focus. ` +
+                        `Return ONLY the refined alt text string under 125 characters, with no extra commentary or markdown code blocks.\n\n` +
+                        `Text to compress: "${opt.alt}"`;
+
+                    const fitPayload = JSON.stringify({
+                        contents: [{
+                            parts: [{ text: fitPrompt }]
+                        }]
+                    });
+
+                    const fitForm = new FormData();
+                    fitForm.append('action', 'polly_gemini_proxy');
+                    fitForm.append('nonce', config.nonce);
+                    fitForm.append('model', config.model);
+                    fitForm.append('payload', fitPayload);
+
+                    try {
+                        const proxyData = await geminiRequest(fitForm);
+                        const data = proxyData.data;
+                        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                            throw new Error('Unexpected response shape from Gemini API.');
+                        }
+                        
+                        let refinedText = data.candidates[0].content.parts[0].text.trim();
+                        // Clean up any stray quotes the AI might wrap around the response
+                        refinedText = refinedText.replace(/^["']|["']$/g, '').trim();
+
+                        // Synchronize the component data and UI elements instantly
+                        opt.alt = refinedText;
+                        content.textContent = refinedText;
+                        charCount.textContent = `${refinedText.length} characters`;
+                        charCount.classList.toggle('over-limit', refinedText.length > 125);
+                        
+                        // Update the screen-reader label attribute on the primary select card
+                        selectBtn.setAttribute('aria-label', `Select ${opt.label}: ${refinedText}`);
+
+                        // If it successfully hit the budget, destroy the button gracefully
+                        if (refinedText.length <= 125) {
+                            fitBtn.remove();
+                        } else {
+                            fitBtn.textContent = originalFitLabel;
+                            fitBtn.disabled = false;
+                        }
+
+                    } catch (err) {
+                        alert('Your text got caught in a squall! Polly Error: ' + err.message);
+                        fitBtn.textContent = originalFitLabel;
+                        fitBtn.disabled = false;
+                    }
                 };
                 item.appendChild(fitBtn);
             }
