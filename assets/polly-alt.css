@@ -506,3 +506,159 @@ textarea[data-setting="alt"],
     outline-offset: 2px;
     box-shadow: 0 0 0 8px #4a9c5d;
 }
+
+/* =============================================================================
+   Revision Assistant Component
+   ============================================================================= */
+
+.polly-revision-assistant {
+    margin-top: 12px;
+    padding: 10px;
+    background: #f6f7f7;
+    border: 1px solid #c3c4c7;
+    border-left: 4px solid #2271b1;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.polly-revision-title-row {
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.polly-dismiss-assistant {
+    background: none;
+    border: none;
+    color: #646970;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.polly-revision-split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.polly-revision-card-old,
+.polly-revision-card-new {
+    background: #fff;
+    padding: 6px;
+    border: 1px solid #dcdcde;
+    border-radius: 3px;
+}
+
+.polly-revision-card-tag {
+    font-weight: 600;
+    font-size: 10px;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+}
+
+.polly-revision-card-old .polly-revision-card-tag { color: #646970; }
+.polly-revision-card-new .polly-revision-card-tag { color: #2271b1; }
+
+.polly-old-text-src,
+.polly-new-text-src {
+    color: #1d2327;
+    margin-bottom: 5px;
+    word-break: break-word;
+}
+
+.polly-revert-btn {
+    font-size: 11px !important;
+    height: 22px !important;
+    line-height: 20px !important;
+    color: #b32d2e !important;
+    border-color: #b32d2e !important;
+}
+
+.polly-copy-old-btn {
+    font-size: 11px !important;
+    height: 22px !important;
+    line-height: 20px !important;
+}
+
+.polly-revision-assistant-footer {
+    margin: 0;
+    color: #646970;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* =============================================================================
+   Enforcement Modal Rule Extrapolations
+   ============================================================================= */
+
+.polly-enforcement-alert-text {
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+#polly-enforcement-modal .polly-modal-btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#polly-stay-btn {
+    flex: 1;
+    height: 50px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#polly-leave-btn {
+    flex: 1;
+    height: 50px;
+    font-size: 14px;
+    color: #666;
+}
+
+/* Ensure the button shrinks nicely and uses native WP font weight rules */
+.polly-inline-fit-btn {
+    background: none;
+    border: none;
+    color: #2271b1;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 0;
+    margin-left: 8px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.polly-inline-fit-btn:hover {
+    color: #135e96;
+}
+
+.polly-inline-fit-btn:disabled {
+    color: #a7aaad;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
+/* Compact inline link style variation for Media grid rows and tight spaces */
+.polly-inline-fit-btn.polly-inline-compact {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #2271b1 !important;
+    text-decoration: underline !important;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 0 !important;
+    margin-left: 8px !important;
+    display: inline-block;
+    vertical-align: middle;
+}
+.polly-inline-fit-btn.polly-inline-compact:hover {
+    color: #135e96 !important;
+}

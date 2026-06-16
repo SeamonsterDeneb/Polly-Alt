@@ -58,7 +58,7 @@
         if (!counter) {
             const ancestor = field.closest(
                 '.polly-list-field-container, .polly-btn-wrapper, .media-sidebar, ' +
-                '.attachment-details, .setting, .media-item, .media-frame-side'
+                '.attachment-details, .setting, .media-item, .media-frame-side, .components-base-control'
             );
             counter = ancestor ? ancestor.querySelector('.polly-char-counter') : null;
         }
@@ -70,20 +70,41 @@
         const isOver = len > 125;
         counter.classList.toggle('over-limit', isOver);
 
-        // Manage inline "Make it Fit" button for standard workspace fields
-        let inlineFitBtn = counter.parentNode.querySelector('.polly-inline-fit-btn');
+        // Standardized structural root tracker
+        const rootContainer = counter.closest('.polly-field-header, .polly-list-field-container, .setting') || 
+                              (field.classList.contains('components-textarea-control__input') ? field.parentNode : null);
+        if (!rootContainer) return;
+
+        let inlineFitBtn = rootContainer.querySelector('.polly-inline-fit-btn');
         
         if (isOver && !inlineFitBtn && !field.disabled) {
             inlineFitBtn = document.createElement('button');
             inlineFitBtn.type = 'button';
-            inlineFitBtn.className = 'polly-inline-fit-btn';
             inlineFitBtn.textContent = 'Make it Fit';
-            inlineFitBtn.style.marginLeft = '10px';
+            
+            // Check explicitly if we are working inside Gutenberg's native text component
+            if (field.classList.contains('components-textarea-control__input')) {
+                inlineFitBtn.className = 'polly-inline-fit-btn button button-secondary button-small';
+                inlineFitBtn.style.cssText = 'display: inline-block; margin-left: auto; height: 24px; line-height: 22px; padding: 0 8px;';
+                
+                // Drop the button cleanly right inside the label wrapper row for pixel-perfect placement
+                const labelRow = field.parentNode.querySelector('.components-base-control__label-container');
+                if (labelRow) {
+                    labelRow.appendChild(inlineFitBtn);
+                } else {
+                    counter.after(inlineFitBtn);
+                }
+            } else {
+                // Classic Media Library layout fallback
+                inlineFitBtn.className = 'polly-inline-fit-btn polly-inline-compact';
+                counter.insertAdjacentElement('afterend', inlineFitBtn);
+            }
+            
             inlineFitBtn.onclick = (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 triggerInlineFit(field, inlineFitBtn, counter);
             };
-            counter.insertAdjacentElement('afterend', inlineFitBtn);
         } else if (!isOver && inlineFitBtn) {
             inlineFitBtn.remove();
         }
@@ -147,7 +168,6 @@
     }
 
     function renderRevisionAssistant(field, oldText, newText) {
-        // Clear out any old revision assistant boxes attached to this specific field context
         const parentContainer = field.closest('.polly-list-field-container, .components-base-control, .setting, .media-sidebar');
         if (!parentContainer) return;
         
@@ -155,26 +175,25 @@
 
         const assistant = document.createElement('div');
         assistant.className = 'polly-revision-assistant';
-        assistant.style.cssText = 'margin-top:12px; padding:10px; background:#f6f7f7; border:1px solid #c3c4c7; border-left:4px solid #2271b1; border-radius:4px; font-size:12px;';
         
         assistant.innerHTML = `
-            <div style="font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+            <div class="polly-revision-title-row">
                 <span>🦜 Polly Revision Assistant</span>
-                <button type="button" class="polly-dismiss-assistant" style="background:none; border:none; color:#646970; cursor:pointer; font-size:14px;">&times;</button>
+                <button type="button" class="polly-dismiss-assistant">&times;</button>
             </div>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:8px;">
-                <div style="background:#fff; padding:6px; border:1px solid #dcdcde; border-radius:3px;">
-                    <div style="color:#646970; font-weight:600; font-size:10px; margin-bottom:3px; text-transform:uppercase;">Old Draft (${oldText.length} ch)</div>
-                    <div class="polly-old-text-src" style="color:#1d2327; margin-bottom:5px; word-break:break-word;">${escapeHtml(oldText)}</div>
-                    <button type="button" class="polly-copy-old-btn button button-small" style="font-size:11px; height:22px; line-height:20px;">Copy Old</button>
+            <div class="polly-revision-split-grid">
+                <div class="polly-revision-card-old">
+                    <div class="polly-revision-card-tag">Old Draft (${oldText.length} ch)</div>
+                    <div class="polly-old-text-src">${escapeHtml(oldText)}</div>
+                    <button type="button" class="polly-copy-old-btn button button-small">Copy Old</button>
                 </div>
-                <div style="background:#fff; padding:6px; border:1px solid #dcdcde; border-radius:3px;">
-                    <div style="color:#2271b1; font-weight:600; font-size:10px; margin-bottom:3px; text-transform:uppercase;">New Fit (${newText.length} ch)</div>
-                    <div style="color:#1d2327; margin-bottom:5px; word-break:break-word;">${escapeHtml(newText)}</div>
-                    <button type="button" class="polly-revert-btn button button-small" style="font-size:11px; height:22px; line-height:20px; color:#b32d2e; border-color:#b32d2e;">Revert to Old</button>
+                <div class="polly-revision-card-new">
+                    <div class="polly-revision-card-tag">New Fit (${newText.length} ch)</div>
+                    <div class="polly-new-text-src">${escapeHtml(newText)}</div>
+                    <button type="button" class="polly-revert-btn button button-small">Revert to Old</button>
                 </div>
             </div>
-            <p style="margin:0; color:#646970; font-size:11px; line-height:1.4;">Use the snippet targets above to copy visual items from your previous draft back into your active description field if needed.</p>
+            <p class="polly-revision-assistant-footer">Use the snippet targets above to copy visual items from your previous draft back into your active description field if needed.</p>
         `;
 
         // Simple local string escaping to protect DOM parsing limits
@@ -382,7 +401,7 @@
                 <h3 id="polly-alert-heading">🦜 Just a moment, Captain!</h3>
             </div>
             <div class="polly-modal-body">
-                <p style="font-size:15px; line-height:1.6;">
+                <p class="polly-enforcement-alert-text">
                     ${customMessage
                         ? customMessage
                         : `<strong>${missingCount} ${noun} missing alt text</strong> on this page.
@@ -390,11 +409,11 @@
                            It only takes a moment — Polly can help!`
                     }
                 </p>
-                <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
-                    <button id="polly-stay-btn" class="button button-primary" style="flex:1; height:50px; font-size:14px; font-weight:600;">
+                <div class="polly-modal-btn-row">
+                    <button id="polly-stay-btn" class="button button-primary">
                         ✏️ Let's add some alt right now!
                     </button>
-                    <button id="polly-leave-btn" class="button" style="flex:1; height:50px; font-size:14px; color:#666;">
+                    <button id="polly-leave-btn" class="button">
                         ${leaveLabel}
                     </button>
                 </div>
@@ -698,33 +717,60 @@
     ].join(',');
 
     function initPolly() {
-    injectUploaderFields();
+        const allAltFields = document.querySelectorAll(
+            '#attachment-details-alt-text, .polly-list-alt-field, [data-setting="alt"] textarea, .components-textarea-control__input'
+        );
 
-        document.querySelectorAll(ALT_FIELD_SELECTORS).forEach(field => {
-            if (field.dataset.pollyReady === 'true') return;
-            if (field.name && /caption|description/i.test(field.name)) return;
+        allAltFields.forEach(field => {
+            if (!field) return;
 
-            field.dataset.pollyReady = 'true';
-
-            setupFieldUI(field);
+            // 1. Ensure structural target wrappers and counts exist right away
+            ensureCounterExists(field);
             updateCharCounter(field);
-            updateButtonLabel(field);
 
-            if (!field.value.trim() && !field.disabled) field.classList.add('missing-alt');
+            // 2. Prevent stacking identical listener loops if already initialized
+            if (field.dataset.pollyInit === "true") return;
+            field.dataset.pollyInit = "true";
 
+            // 3. Attach active tracking behavior to user modifications
             field.addEventListener('input', () => {
                 updateCharCounter(field);
                 updateButtonLabel(field);
-                field.classList.toggle('missing-alt', !field.value.trim() && !field.disabled);
             });
 
-            // Auto-save on blur — ID resolved lazily here.
             field.addEventListener('blur', () => {
                 const id = resolveAttachmentId(field);
-                if (id) saveAltText(id, field.value);
+                if (id) {
+                    saveAltText(id, field.value);
+                }
             });
         });
-        syncUploadGuard();
+    }
+
+    /**
+     * Defensive layout utility ensuring structural elements exist
+     * before running live width budget evaluations.
+     */
+    function ensureCounterExists(field) {
+        let counter = document.querySelector(`.polly-char-counter[data-for="${field.id}"]`);
+        if (counter) return;
+
+        // Is it the Gutenberg sidebar field?
+        if (field.classList.contains('components-textarea-control__input')) {
+            const labelRow = field.parentNode.querySelector('.components-base-control__label-container');
+            if (labelRow && !labelRow.querySelector('.polly-char-counter')) {
+                const span = document.createElement('span');
+                span.className = 'polly-char-counter';
+                span.setAttribute('data-for', field.id || '');
+                span.style.cssText = 'margin-left: auto; font-weight: normal; font-size: 12px;';
+                labelRow.appendChild(span);
+            }
+        } else {
+            // Standard media template fallback
+            const ancestor = field.closest('.polly-list-field-container, .polly-btn-wrapper, .media-sidebar, .attachment-details, .setting, .media-item, .media-frame-side');
+            if (!ancestor) return;
+            // (Let standard initialization run)
+        }
     }
 
     function setupFieldUI(field) {

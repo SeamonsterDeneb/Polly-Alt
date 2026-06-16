@@ -390,14 +390,14 @@ function polly_alt_enqueue_assets() {
 
     wp_enqueue_style(
         'polly-alt-style',
-        $base_url . 'assets/style.css',
+        $base_url . 'assets/polly-alt.css',
         [],
         POLLY_ALT_VERSION
     );
 
     wp_enqueue_script(
         'polly-alt-script',
-        $base_url . 'assets/script.js',
+        $base_url . 'assets/polly-alt.js',
         [],
         POLLY_ALT_VERSION,
         true
