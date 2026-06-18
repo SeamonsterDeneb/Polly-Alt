@@ -730,6 +730,12 @@
             ensureCounterExists(field);
             updateCharCounter(field);
 
+            // If the operational action button layout row hasn't been built for this field yet, rig it up
+            const containerNode = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details');
+            if (containerNode && !containerNode.querySelector('.polly-gen-btn') && !field.classList.contains('components-textarea-control__input')) {
+                setupFieldUI(field);
+            }
+
             // 2. Prevent stacking identical listener loops if already initialized
             if (field.dataset.pollyInit === "true") return;
             field.dataset.pollyInit = "true";
@@ -835,6 +841,7 @@
         btn.textContent = 'Preview and Generate';
         btn.onclick = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             const id = resolveAttachmentId(field);
             triggerGeneration(field, id);
         };

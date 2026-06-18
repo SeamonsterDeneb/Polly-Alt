@@ -205,12 +205,14 @@ textarea[data-setting="alt"],
     box-sizing: border-box;
 }
 
-.missing-alt {
+.missing-alt,
+.wp-list-table textarea.missing-alt {
     border: 2px solid #d63638 !important;
     background: #fff8f8 !important;
 }
 
-.missing-alt::placeholder {
+.missing-alt::placeholder,
+.wp-list-table textarea.missing-alt::placeholder {
     color: #d63638 !important;
     opacity: 1 !important;
 }
@@ -492,6 +494,8 @@ textarea[data-setting="alt"],
 
 /* Main page generation buttons */
 .polly-action-row .polly-gen-btn:focus-visible,
+.polly-list-field-container .polly-gen-btn:focus-visible,
+.wp-list-table .polly-gen-btn:focus-visible,
 .polly-field-header .polly-decorative-check:focus-visible,
 .polly-decorative-wrap .polly-decorative-check:focus-visible,
 
@@ -670,4 +674,16 @@ textarea[data-setting="alt"],
 }
 .polly-inline-fit-btn.polly-inline-compact:hover {
     color: #135e96 !important;
+}
+
+/* Custom List View Specific Tweak */
+.wp-list-table .polly-list-field-container {
+    padding: 4px 0;
+}
+.wp-list-table .polly-action-row {
+    margin-top: 6px;
+}
+.wp-list-table .polly-standards-text {
+    margin: 6px 0;
+    font-size: 11px !important;
 }
