@@ -506,3 +506,13 @@ textarea[data-setting="alt"],
     outline-offset: 2px;
     box-shadow: 0 0 0 8px #4a9c5d;
 }
+
+.polly-tip-rotator {
+    margin-top:16px; 
+    padding:12px 14px; 
+    background:#f0f6fc; 
+    border-left:4px solid #2271b1; 
+    border-radius:4px; 
+    font-size:13px; 
+    line-height:1.5;
+}
