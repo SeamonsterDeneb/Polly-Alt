@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v0.9.21
+ * Polly Alt AI - Logic v0.9.24
 **/
 (function () {
 
@@ -83,14 +83,15 @@
             inlineFitBtn.textContent = 'Make it Fit';
             
             // Check explicitly if we are working inside Gutenberg's native text component
-            if (field.classList.contains('components-textarea-control__input')) {
+            if (field.classList.contains('components-textarea-control__input') || field.id.includes('gutenberg')) {
                 inlineFitBtn.className = 'polly-inline-fit-btn button button-secondary button-small';
-                inlineFitBtn.style.cssText = 'display: inline-block; margin-left: auto; height: 24px; line-height: 22px; padding: 0 8px;';
+                inlineFitBtn.style.cssText = 'display: inline-block; margin-left: 8px; height: 24px; line-height: 22px; padding: 0 8px; vertical-align: middle;';
                 
-                // Drop the button cleanly right inside the label wrapper row for pixel-perfect placement
-                const labelRow = field.parentNode.querySelector('.components-base-control__label-container');
-                if (labelRow) {
-                    labelRow.appendChild(inlineFitBtn);
+                // Climb to find the exact same label row element
+                const baseControl = field.closest('.components-base-control');
+                const labelTarget = baseControl ? (baseControl.querySelector('.components-base-control__label-container') || baseControl.querySelector('.components-base-control__label')) : null;
+                if (labelTarget) {
+                    labelTarget.appendChild(inlineFitBtn);
                 } else {
                     counter.after(inlineFitBtn);
                 }
@@ -763,21 +764,23 @@
         let counter = document.querySelector(`.polly-char-counter[data-for="${field.id}"]`);
         if (counter) return;
 
-        // Is it the Gutenberg sidebar field?
-        if (field.classList.contains('components-textarea-control__input')) {
-            const labelRow = field.parentNode.querySelector('.components-base-control__label-container');
-            if (labelRow && !labelRow.querySelector('.polly-char-counter')) {
+        // Is it a Gutenberg sidebar field? Find the master control container.
+        if (field.classList.contains('components-textarea-control__input') || field.id.includes('gutenberg')) {
+            const baseControl = field.closest('.components-base-control');
+            // Support both standard wrappers and direct label placements
+            const labelTarget = baseControl ? (baseControl.querySelector('.components-base-control__label-container') || baseControl.querySelector('.components-base-control__label')) : null;
+            
+            if (labelTarget && !baseControl.querySelector('.polly-char-counter')) {
                 const span = document.createElement('span');
                 span.className = 'polly-char-counter';
                 span.setAttribute('data-for', field.id || '');
-                span.style.cssText = 'margin-left: auto; font-weight: normal; font-size: 12px;';
-                labelRow.appendChild(span);
+                span.style.cssText = 'margin-left: auto; font-weight: normal; font-size: 12px; display: inline-block;';
+                labelTarget.appendChild(span);
             }
         } else {
             // Standard media template fallback
             const ancestor = field.closest('.polly-list-field-container, .polly-btn-wrapper, .media-sidebar, .attachment-details, .setting, .media-item, .media-frame-side');
             if (!ancestor) return;
-            // (Let standard initialization run)
         }
     }
 
@@ -1159,7 +1162,7 @@
             <p style="font-size:15px; line-height:1.6;">
                 Check out the image while I'm working on some alt text options for you…
             </p>
-            <div class="polly-tip-rotator" aria-live="polite" style="margin-top:16px; padding:12px 14px; background:#f0f6fc; border-left:4px solid #2271b1; border-radius:4px; font-size:13px; line-height:1.5;">
+            <div class="polly-tip-rotator" aria-live="polite">
                 <span class="polly-tip-text"></span>
             </div>
             <div class="polly-modal-btn-row" style="margin-top:20px;">
@@ -1723,10 +1726,18 @@
                         null,
                         'This image has no alt text. Blind and low-vision visitors won\'t know what it shows.',
                         () => {
-                            // Re-select the block and open the sidebar
+                            // 1. Re-select the block and open the sidebar layout tree
                             wp.data.dispatch('core/block-editor').selectBlock(clientId);
-                            wp.data.dispatch('core/edit-post')
-                                ?.openGeneralSidebar('edit-post/block');
+                            wp.data.dispatch('core/edit-post')?.openGeneralSidebar('edit-post/block');
+
+                            // 2. Wait a brief cycle for the sidebar elements to draw into the DOM
+                            setTimeout(() => {
+                                const gutenbergBtn = document.querySelector('.components-panel__body .polly-gen-btn, .polly-action-row .polly-gen-btn');
+                                if (gutenbergBtn) {
+                                    gutenbergBtn.focus();
+                                    gutenbergBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                            }, 150); // Small 150ms delay gives Gutenberg room to complete its generation setup
                         }
                     );
                 }
@@ -1775,12 +1786,14 @@
 
             const getAttachmentId = () => getBlockData()?.attributes?.id || null;
 
-            // --- Counter ---
-            const counter = document.createElement('span');
-            counter.className = 'polly-char-counter';
-            counter.textContent = `${field.value.length} characters`;
-            counter.classList.toggle('over-limit', field.value.length > 125);
-            altLabel.parentNode.insertBefore(counter, altLabel.nextSibling);
+            // Give the field a stable operational ID for character counting lookups
+            if (!field.id) {
+                field.id = 'polly-gutenberg-field-' + (getAttachmentId() || Math.random().toString(36).slice(2, 9));
+            }
+
+            // Let the global framework draw the counter and handle initial layout states
+            ensureCounterExists(field);
+            updateCharCounter(field);
 
             // --- Generate button ---
             const actionRow = document.createElement('div');
@@ -1856,9 +1869,10 @@
 
             // --- Update counter and button label on input ---
             field.addEventListener('input', () => {
-                counter.textContent = `${field.value.length} characters`;
-                counter.classList.toggle('over-limit', field.value.length > 125);
-                btn.textContent = field.value.trim() ? 'Preview and Refine' : 'Preview and Generate';
+                // Route through central framework to evaluate the 125 ch limit and deploy "Make it Fit"
+                updateCharCounter(field);
+                updateButtonLabel(field);
+                
                 // Also sync alt text back to block attributes
                 const block = getBlockData();
                 if (block) {

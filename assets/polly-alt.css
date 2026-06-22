@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Stylesheet v0.9.21
+ * Polly Alt AI - Stylesheet v0.9.24
  */
 
 /* =============================================================================
@@ -492,7 +492,8 @@ textarea[data-setting="alt"],
     Polly focus styling for keyboard accessibility
     ============================================================================= */
 
-/* Main page generation buttons */
+/* Main page generation buttons - Boosted for Gutenberg compatibility */
+.polly-action-row .polly-gen-btn:focus,
 .polly-action-row .polly-gen-btn:focus-visible,
 .polly-list-field-container .polly-gen-btn:focus-visible,
 .wp-list-table .polly-gen-btn:focus-visible,
@@ -500,22 +501,23 @@ textarea[data-setting="alt"],
 .polly-decorative-wrap .polly-decorative-check:focus-visible,
 
 /* Choice and enforcement modals */
+.polly-choice-select-btn:focus,
 .polly-choice-select-btn:focus-visible,
 #polly-alt-modal .polly-modal-edit-btn:focus-visible,
 #polly-alt-modal .polly-footer-btn:focus-visible,
 #polly-alt-modal .polly-modal-decorative-check:focus-visible,
 #polly-enforcement-modal button:focus-visible,
 #polly-drop-notification button:focus-visible {
-    outline: 6px solid #96BE2D;
-    outline-offset: 2px;
-    box-shadow: 0 0 0 8px #4a9c5d;
+    outline: 6px solid #96BE2D !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 8px #4a9c5d !important;
 }
 
 .polly-tip-rotator {
     margin-top:16px; 
     padding:12px 14px; 
-    background:#f0f6fc; 
-    border-left:4px solid #2271b1; 
+    background: #f6faf0 !important; /* Soft, light Polly green */
+    border-left: 4px solid #d63638 !important; /* Striking parrot-red sidebar */
     border-radius:4px; 
     font-size:13px; 
     line-height:1.5;
