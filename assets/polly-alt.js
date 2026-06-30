@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v0.9.24
+ * Polly Alt AI - Logic v0.9.29
 **/
 (function () {
 
@@ -483,8 +483,15 @@
 
         modal.setAttribute('tabindex', '-1');
         modal.focus();
-        document.getElementById('polly-stay-btn').focus({ focusVisible: true });
-        trapFocus(modal);
+        
+        // Use a clean paint frame delay to override Gutenberg's native block selection focus engine
+        requestAnimationFrame(() => {
+            const stayBtn = document.getElementById('polly-stay-btn');
+            if (stayBtn) {
+                stayBtn.focus({ focusVisible: true });
+            }
+            trapFocus(modal);
+        });
     }
     // -------------------------------------------------------------------------
     // Drag and drop completion notification
@@ -592,12 +599,13 @@
     // AJAX save
     // -------------------------------------------------------------------------
 
-    async function saveAltText(id, text) {
+    async function saveAltText(id, text, isDecorative = false) {
         if (!id) return;
         const formData = new FormData();
         formData.append('action', 'polly_save_alt');
         formData.append('attachment_id', id);
         formData.append('alt_text', text);
+        formData.append('is_decorative', isDecorative ? 1 : 0);
         formData.append('remove_title', config.removeTitle ? 1 : 0);
         formData.append('nonce', config.nonce);
 
@@ -610,10 +618,13 @@
         }
 
         // Keep Backbone's in-memory model in sync so Gutenberg
-        // picks up the alt text when inserting.
+        // picks up the alt text and custom attributes when inserting.
         if (window.wp?.media?.attachment) {
             const attachment = wp.media.attachment(id);
-            if (attachment.get('id')) attachment.set('alt', text);
+            if (attachment.get('id')) {
+                attachment.set('alt', text);
+                attachment.set('is_decorative', isDecorative);
+            }
         }
     }
 
@@ -909,6 +920,7 @@
 
         const decoCheck = decoWrap.querySelector('.polly-decorative-check');
         decoCheck.addEventListener('change', () => {
+            const id = resolveAttachmentId(field);
             if (decoCheck.checked) {
                 field.value = '';
                 field.disabled = true;
@@ -916,12 +928,15 @@
                 field.placeholder = 'Purely decorative elements don\'t need alternative text.';
                 btn.style.display = 'none';
                 updateCharCounter(field);
-                const id = resolveAttachmentId(field);
-                if (id) saveAltText(id, '');
+                if (id) saveAltText(id, '', true);
             } else {
                 field.disabled = false;
                 btn.style.display = 'flex';
-                if (!field.value.trim()) field.classList.add('missing-alt');
+                field.placeholder = 'Please add alternative text for blind and low-vision users';
+                if (!field.value.trim()) {
+                    field.classList.add('missing-alt');
+                }
+                if (id) saveAltText(id, field.value, false);
             }
             field.dispatchEvent(new Event('input', { bubbles: true }));
         });
@@ -1174,235 +1189,6 @@
         }
     }
 
-    /**
-     * Opens the alt-text dialog immediately — image preview on top, a rotating
-     * tip on the bottom — while Polly is still waiting on the AI response.
-     * Returns a controller used to later fill in real choices, show an error,
-     * or check whether the person already dismissed it.
-     */
-    function showGeneratingModal(imgSrc, triggerBtn) {
-        const { overlay, modal, body, headerEl } = buildAltModalShell(imgSrc);
-        modal.setAttribute('aria-label', 'Generating Alt Text');
-        headerEl.textContent = '🦜 Hang tight…';
-
-        body.innerHTML = `
-            <p style="font-size:15px; line-height:1.6;">
-                Take a close look at the image while I'm working on some alt text options for you…
-            </p>
-            <div class="polly-tip-rotator" aria-live="polite">
-                <span class="polly-tip-text"></span>
-            </div>
-            <div class="polly-modal-btn-row" style="margin-top:20px;">
-                <button type="button" id="polly-generating-cancel-btn" class="button" style="color:#666;">Cancel</button>
-            </div>
-        `;
-
-        const tipText = body.querySelector('.polly-tip-text');
-        let tipIndex = Math.floor(Math.random() * ALT_TEXT_TIPS.length);
-        tipText.textContent = ALT_TEXT_TIPS[tipIndex];
-        const tipInterval = setInterval(() => {
-            tipIndex = (tipIndex + 1) % ALT_TEXT_TIPS.length;
-            tipText.textContent = ALT_TEXT_TIPS[tipIndex];
-        }, TIP_ROTATION_MS);
-
-        const trigger = triggerBtn || document.activeElement;
-        let dismissed = false;
-
-        function dismiss() {
-            if (dismissed) return;
-            dismissed = true;
-            clearInterval(tipInterval);
-            overlay.remove();
-            modal.remove();
-            if (trigger) trigger.focus();
-        }
-
-        modal.addEventListener('polly-close', dismiss);
-        overlay.onclick = dismiss;
-
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
-        modal.setAttribute('tabindex', '-1');
-        modal.focus();
-
-        body.querySelector('#polly-generating-cancel-btn').onclick = dismiss;
-
-        trapFocus(modal);
-
-        return {
-            isDismissed: () => dismissed,
-
-            showError(message, onRetry) {
-                if (dismissed) return;
-                clearInterval(tipInterval);
-                headerEl.textContent = '🦜 Squawk! Something went sideways.';
-                modal.setAttribute('aria-label', 'Alt Text Generation Error');
-                body.innerHTML = `
-                    <p style="font-size:15px; line-height:1.6;">${message.replace(/\n/g, '<br>')}</p>
-                    <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
-                        <button type="button" id="polly-error-retry-btn" class="button button-primary" style="flex:1; height:50px;">Try Again</button>
-                        <button type="button" id="polly-error-close-btn" class="button" style="flex:1; height:50px; color:#666;">Close</button>
-                    </div>
-                `;
-                body.querySelector('#polly-error-close-btn').onclick = dismiss;
-                body.querySelector('#polly-error-retry-btn').onclick = () => {
-                    dismiss();
-                    if (onRetry) onRetry();
-                };
-                body.querySelector('#polly-error-retry-btn').focus({ focusVisible: true });
-            },
-
-            populate(choices, field, original, onSelect) {
-                if (dismissed) return;
-                clearInterval(tipInterval);
-                headerEl.textContent = '🦜 Choose Alt Text';
-                modal.setAttribute('aria-label', 'Choose Alt Text');
-                body.innerHTML = '';
-
-                const options = [];
-                if (original) options.push({ alt: original, label: 'ORIGINAL', explanation: 'Your current text.' });
-                choices.forEach(c => options.push({ ...c, label: 'AI OPTION' }));
-
-                options.forEach(opt => {
-                    const item = document.createElement('div');
-                    item.className = 'polly-choice-item';
-
-                    const selectBtn = document.createElement('button');
-                    selectBtn.type = 'button';
-                    selectBtn.className = 'polly-choice-select-btn';
-                    selectBtn.setAttribute('aria-label', `Select ${opt.label}: ${opt.alt}`);
-
-                    const tag = document.createElement('span');
-                    tag.className = 'polly-choice-tag';
-                    tag.style.color = opt.label === 'ORIGINAL' ? '#666' : '#2271b1';
-                    tag.textContent = opt.label;
-
-                    const content = document.createElement('div');
-                    content.className = 'polly-choice-content';
-                    content.textContent = opt.alt;
-
-                    const charCount = document.createElement('span');
-                    charCount.className = 'polly-choice-char-count';
-                    charCount.textContent = `${opt.alt.length} characters`;
-                    charCount.classList.toggle('over-limit', opt.alt.length > 125);
-
-                    selectBtn.appendChild(tag);
-                    selectBtn.appendChild(content);
-                    selectBtn.appendChild(charCount);
-
-                    if (opt.explanation) {
-                        const expl = document.createElement('div');
-                        expl.className = 'polly-choice-explanation';
-                        expl.textContent = opt.explanation;
-                        selectBtn.appendChild(expl);
-                    }
-
-                    item.appendChild(selectBtn);
-
-                    if (opt.alt.length > 125) {
-                        const fitBtn = document.createElement('button');
-                        fitBtn.type = 'button';
-                        fitBtn.className = 'polly-modal-fit-btn';
-                        fitBtn.style.marginRight = '5px';
-                        fitBtn.textContent = 'Make it Fit';
-                        fitBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            alert(`Testing "Make it Fit" on text: "${opt.alt}"`);
-                        };
-                        item.appendChild(fitBtn);
-                    }
-
-                    const editBtn = document.createElement('button');
-                    editBtn.type = 'button';
-                    editBtn.className = 'polly-modal-edit-btn';
-                    editBtn.textContent = 'Edit';
-                    editBtn.dataset.state = 'edit';
-                    item.appendChild(editBtn);
-
-                    selectBtn.onclick = () => {
-                        const textarea = item.querySelector('.polly-choice-textarea');
-                        const finalVal = textarea ? textarea.value : content.textContent;
-                        field.value = finalVal;
-                        field.classList.remove('missing-alt');
-                        updateCharCounter(field);
-                        updateButtonLabel(field);
-                        field.dispatchEvent(new Event('input', { bubbles: true }));
-                        if (onSelect) onSelect(finalVal);
-                        dismiss();
-                    };
-
-                    editBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        if (editBtn.dataset.state === 'edit') {
-                            const textarea = document.createElement('textarea');
-                            textarea.className = 'polly-choice-textarea';
-                            textarea.value = content.textContent;
-                            item.appendChild(textarea);
-                            editBtn.textContent = 'Apply';
-                            editBtn.dataset.state = 'apply';
-                            textarea.addEventListener('input', () => {
-                                charCount.textContent = `${textarea.value.length} characters`;
-                                charCount.classList.toggle('over-limit', textarea.value.length > 125);
-                            });
-                            textarea.addEventListener('click', (e) => e.stopPropagation());
-                            textarea.focus();
-                        } else {
-                            selectBtn.click();
-                        }
-                    };
-
-                    body.appendChild(item);
-                });
-
-                const modalDecoWrap = document.createElement('div');
-                modalDecoWrap.className = 'polly-decorative-wrap';
-                const modalDecoId = 'polly-modal-deco-' + field.id;
-                modalDecoWrap.innerHTML = `
-                    <label for="${modalDecoId}">
-                        <input type="checkbox" id="${modalDecoId}" class="polly-modal-decorative-check">
-                        This image is decorative
-                    </label>
-                    <span class="decorative-notice">Blind and low-vision users don't need a description of this image. Selecting this will clear the alt text field.</span>
-                `;
-                body.appendChild(modalDecoWrap);
-
-                const modalDecoCheck = modalDecoWrap.querySelector('.polly-modal-decorative-check');
-                modalDecoCheck.addEventListener('change', () => {
-                    if (modalDecoCheck.checked) {
-                        field.value = '';
-                        field.disabled = true;
-                        field.classList.remove('missing-alt');
-                        updateCharCounter(field);
-
-                        const pageDecoCheck = document.querySelector(`#polly-deco-${field.id}`);
-                        if (pageDecoCheck && !pageDecoCheck.checked) {
-                            pageDecoCheck.checked = true;
-                            pageDecoCheck.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-
-                        const id = resolveAttachmentId(field);
-                        if (id) saveAltText(id, '');
-                        dismiss();
-                    }
-                });
-
-                const cancelBtn = document.createElement('button');
-                cancelBtn.type = 'button';
-                cancelBtn.className = 'polly-footer-btn';
-                cancelBtn.textContent = 'Keep Current & Close';
-                cancelBtn.onclick = dismiss;
-                body.appendChild(cancelBtn);
-
-                const firstChoice = body.querySelector('.polly-choice-select-btn');
-                if (firstChoice) {
-                    firstChoice.focus({ focusVisible: true });
-                } else {
-                    modal.focus();
-                }
-            },
-        };
-    }
-
     // -------------------------------------------------------------------------
     // Choice modal
     // -------------------------------------------------------------------------
@@ -1456,14 +1242,14 @@
         headerEl.textContent = '🦜 Hang tight…';
 
         body.innerHTML = `
-            <p style="font-size:15px; line-height:1.6;">
-                Check out the image while I'm working on some alt text options for you…
+            <p class="polly-modal-intro">
+                Get a good look at the image while I'm working on some alt text options for you…
             </p>
-            <div class="polly-tip-rotator" aria-live="polite" style="margin-top:16px; padding:12px 14px; background:#f0f6fc; border-left:4px solid #2271b1; border-radius:4px; font-size:13px; line-height:1.5;">
+            <div class="polly-tip-rotator" aria-live="polite">
                 <span class="polly-tip-text"></span>
             </div>
-            <div class="polly-modal-btn-row" style="margin-top:20px;">
-                <button type="button" id="polly-generating-cancel-btn" class="button" style="color:#666;">Cancel</button>
+            <div class="polly-modal-btn-row">
+                <button type="button" id="polly-generating-cancel-btn" class="button polly-cancel-btn">Cancel</button>
             </div>
         `;
 
@@ -1543,8 +1329,7 @@
                     selectBtn.setAttribute('aria-label', `Select ${opt.label}: ${opt.alt}`);
 
                     const tag = document.createElement('span');
-                    tag.className = 'polly-choice-tag';
-                    tag.style.color = opt.label === 'ORIGINAL' ? '#666' : '#2271b1';
+                    tag.className = `polly-choice-tag polly-tag-${opt.label.toLowerCase()}`;
                     tag.textContent = opt.label;
 
                     const content = document.createElement('div');
@@ -1569,13 +1354,11 @@
 
                     item.appendChild(selectBtn);
 
-            // Conditional "Make it Fit" button for options over 125 characters
             if (opt.alt.length > 125) {
-                const fitBtn = document.createElement('button');
-                fitBtn.type = 'button';
-                fitBtn.className = 'polly-modal-fit-btn';
-                fitBtn.style.marginRight = '5px'; // Quick spacing next to Edit button
-                fitBtn.textContent = 'Make it Fit';
+                        const fitBtn = document.createElement('button');
+                        fitBtn.type = 'button';
+                        fitBtn.className = 'polly-modal-fit-btn';
+                        fitBtn.textContent = 'Make it Fit';
                 
                 fitBtn.onclick = async (e) => {
                     e.stopPropagation();
@@ -1743,9 +1526,15 @@
             try {
                 const block = wp.data.select('core/block-editor').getBlock(clientId);
                 if (!block || block.name !== 'core/image') return;
+                
                 const alt = block.attributes?.alt ?? '';
-                const isDecorative = block.attributes?.className?.includes('is-decorative') || false;
-                if (!alt.trim() && !isDecorative) {
+                const hasDecoClass = block.attributes?.className?.includes('is-decorative') || false;
+                
+                // Read live checkbox from sidebar UI container frame if it's currently drawn on screen
+                const liveDecoCheck = document.querySelector('.polly-decorative-check');
+                const isLiveChecked = liveDecoCheck ? liveDecoCheck.checked : false;
+
+                if (!alt.trim() && !hasDecoClass && !isLiveChecked) {
                     showEnforcementModal(
                         null,
                         1,
@@ -1858,22 +1647,44 @@
 
             const decoCheck = decoWrap.querySelector('.polly-decorative-check');
 
-            // Sync initial decorative state from block attributes
+            // Sync initial decorative state from block attributes OR underlying attachment fallback model
             const initialBlock = getBlockData();
-            if (initialBlock?.attributes?.className?.includes('is-decorative')) {
+            let attachmentIsDecorative = false;
+            const attachId = getAttachmentId();
+            if (attachId && window.wp?.media?.attachment) {
+                const attachModel = wp.media.attachment(attachId);
+                attachmentIsDecorative = attachModel.get('is_decorative') || false;
+            }
+
+            if (initialBlock?.attributes?.className?.includes('is-decorative') || attachmentIsDecorative) {
                 decoCheck.checked = true;
                 field.disabled = true;
+                if (attachmentIsDecorative && initialBlock && !initialBlock.attributes?.className?.includes('is-decorative')) {
+                    // Update Gutenberg block attributes to instantly catch up to Media Library state
+                    const currentClass = initialBlock.attributes?.className || '';
+                    wp.data.dispatch('core/block-editor').updateBlockAttributes(
+                        initialBlock.clientId,
+                        { className: (currentClass + ' is-decorative').trim(), alt: '' }
+                    );
+                }
             }
 
             decoCheck.addEventListener('change', () => {
                 const block = getBlockData();
                 if (!block) return;
+                
+                // Securely resolve the counter instance for this specific Gutenberg layout block
+                const baseControl = field.closest('.components-base-control');
+                const counter = baseControl ? baseControl.querySelector('.polly-char-counter') : null;
+
                 if (decoCheck.checked) {
                     field.value = '';
                     field.disabled = true;
                     field.classList.remove('missing-alt');
-                    counter.textContent = '0 characters';
-                    counter.classList.remove('over-limit');
+                    if (counter) {
+                        counter.textContent = '0 characters';
+                        counter.classList.remove('over-limit');
+                    }
                     // Add is-decorative class to block attributes
                     const currentClass = block.attributes?.className || '';
                     if (!currentClass.includes('is-decorative')) {
@@ -2015,14 +1826,16 @@
 
                 // Check Backbone model.
                 let altFromModel = null;
+                let isDecorativeModel = false;
                 if (window.wp?.media?.attachment) {
                     const model = wp.media.attachment(attachmentId);
                     altFromModel = model.get('alt') || null;
+                    isDecorativeModel = model.get('is_decorative') || false;
                 }
 
                 const alt = altFromField ?? altFromModel ?? '';
 
-                if (!alt.trim()) {
+                if (!alt.trim() && !isDecorativeModel) {
                     e.preventDefault();
                     e.stopPropagation();
 

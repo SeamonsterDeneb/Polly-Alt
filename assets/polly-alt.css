@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Stylesheet v0.9.24
+ * Polly Alt AI - Stylesheet v0.9.29
  */
 
 /* =============================================================================
@@ -727,4 +727,36 @@ textarea[data-setting="alt"],
 .decorative-notice {
     display: block !important;
     white-space: normal !important; /* Allows the lower description text to wrap safely if needed */
+}
+
+/* =============================================================================
+   Modal Cleanup Rule Adaptations
+   ============================================================================= */
+
+.polly-modal-intro {
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.polly-modal-body .polly-modal-btn-row {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.polly-modal-body .polly-cancel-btn {
+    color: #666 !important;
+}
+
+.polly-choice-tag.polly-tag-original {
+    color: #666;
+}
+
+.polly-choice-tag.polly-tag-ai {
+    color: #2271b1;
+}
+
+.polly-modal-fit-btn {
+    margin-right: 5px;
 }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 0.9.24
+ * Version: 0.9.29
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '0.9.24' );
+define( 'POLLY_ALT_VERSION', '0.9.29' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -350,6 +350,12 @@ add_action( 'wp_ajax_polly_save_alt', function () {
     $alt_text = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
     update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
 
+    // Store the persistent decorative state in the WordPress post meta database
+    if ( isset( $_POST['is_decorative'] ) ) {
+        $is_decorative = '1' === $_POST['is_decorative'] ? '1' : '0';
+        update_post_meta( $attachment_id, '_polly_is_decorative', $is_decorative );
+    }
+
     /*
      * "Clean Decks" — only fires when the client sends remove_title=1,
      * which the JS only does on deliberate AI modal selections, not on
@@ -413,6 +419,23 @@ function polly_alt_enqueue_assets() {
         'nonce'              => wp_create_nonce( 'polly_nonce' ),
     ] );
 }
+
+// Register custom fields to the WP REST API and Media Schema so editor scripts can access the meta value
+add_action( 'rest_api_init', function () {
+    register_rest_field( 'attachment', 'is_decorative', [
+        'get_callback' => function ( $attachment ) {
+            return '1' === get_post_meta( $attachment['id'], '_polly_is_decorative', true );
+        },
+        'update_callback' => function ( $value, $attachment ) {
+            $is_decorative = $value ? '1' : '0';
+            return update_post_meta( $attachment->ID, '_polly_is_decorative', $is_decorative );
+        },
+        'schema' => [
+            'description' => __( 'Whether the image is marked as decorative.' ),
+            'type'        => 'boolean',
+        ],
+    ] );
+} );
 
 // =============================================================================
 // 5. Handle API Key Securely
