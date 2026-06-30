@@ -658,6 +658,22 @@
                 const withDataId = context.closest('[data-id]') || context.querySelector('[data-id]');
                 if (withDataId) id = withDataId.dataset.id;
             }
+
+            // Strategy 4: Classic standalone page fallback query parameter
+            if (!id) {
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('post')) {
+                    id = urlParams.get('post');
+                }
+            }
+
+            // Strategy 5: Image Details inline popup field extraction
+            if (!id) {
+                const hiddenIdInput = context.querySelector('input.attachment-id, input[name="attachment_id"]');
+                if (hiddenIdInput) {
+                    id = hiddenIdInput.value;
+                }
+            }
         }
 
         if (id) field.dataset.pollyAttachmentId = id;
@@ -717,11 +733,14 @@
         '.setting[data-setting="alt"] textarea',
         'textarea[data-setting="alt"]',
         '.polly-list-alt-field',
+        '#attachment_alt',
+        '.image-details input#alt',
+        '.image-details textarea'
     ].join(',');
 
     function initPolly() {
         const allAltFields = document.querySelectorAll(
-            '#attachment-details-alt-text, .polly-list-alt-field, [data-setting="alt"] textarea, .components-textarea-control__input'
+            '#attachment-details-alt-text, .polly-list-alt-field, [data-setting="alt"] textarea, .components-textarea-control__input, #attachment_alt, .image-details input#alt, .image-details textarea'
         );
 
         allAltFields.forEach(field => {
@@ -732,8 +751,14 @@
             updateCharCounter(field);
 
             // If the operational action button layout row hasn't been built for this field yet, rig it up
-            const containerNode = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details');
-            if (containerNode && !containerNode.querySelector('.polly-gen-btn') && !field.classList.contains('components-textarea-control__input')) {
+            const containerNode = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details, td, .image-details');
+            
+            // Safety Check: Avoid capturing Caption fields or double-injecting UI frames
+            const isAltField = field.id.includes('alt') || field.dataset.setting === 'alt' || field.classList.contains('polly-list-alt-field') || field.classList.contains('components-textarea-control__input') || field.placeholder.includes('alt');
+            const isAlreadyInjected = containerNode && (containerNode.classList.contains('polly-ui-ready') || containerNode.querySelector('.polly-gen-btn'));
+
+            if (containerNode && isAltField && !isAlreadyInjected) {
+                containerNode.classList.add('polly-ui-ready');
                 setupFieldUI(field);
             }
 
@@ -829,6 +854,8 @@
         }
 
         // --- Wrapper + Generate button ---
+        if (parent.querySelector('.polly-action-row')) return; // Extra absolute duplicate shield
+
         const wrapper = document.createElement('div');
         wrapper.className = 'polly-btn-wrapper';
         parent.insertBefore(wrapper, field);
@@ -1160,7 +1187,7 @@
 
         body.innerHTML = `
             <p style="font-size:15px; line-height:1.6;">
-                Check out the image while I'm working on some alt text options for you…
+                Take a close look at the image while I'm working on some alt text options for you…
             </p>
             <div class="polly-tip-rotator" aria-live="polite">
                 <span class="polly-tip-text"></span>
@@ -2031,8 +2058,8 @@
             [...m.addedNodes].some(n => {
                 if (n.nodeType !== 1) return false;
                 return (
-                    n.matches?.('.media-item, .polly-list-field-container, .attachment-details, .media-frame, [data-setting="alt"]') ||
-                    n.querySelector?.('.media-item, .polly-list-alt-field, [data-setting="alt"], #attachment-details-alt-text')
+                    n.matches?.('.media-item, .polly-list-field-container, .attachment-details, .media-frame, [data-setting="alt"], .image-details') ||
+                    n.querySelector?.('.media-item, .polly-list-alt-field, [data-setting="alt"], #attachment-details-alt-text, .image-details')
                 );
             })
         );

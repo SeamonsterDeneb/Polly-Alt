@@ -678,14 +678,53 @@ textarea[data-setting="alt"],
     color: #135e96 !important;
 }
 
-/* Custom List View Specific Tweak */
-.wp-list-table .polly-list-field-container {
-    padding: 4px 0;
-}
-.wp-list-table .polly-action-row {
-    margin-top: 6px;
-}
-.wp-list-table .polly-standards-text {
-    margin: 6px 0;
+/* =============================================================================
+   Image Details Modal Layout & Polish
+   ============================================================================= */
+
+/* 1. Make the inline layout "Make it Fit" trigger look like a proper button link */
+.polly-inline-fit-btn.polly-inline-compact {
+    background: #f6f7f7 !important;
+    border: 1px solid #c3c4c7 !important;
+    box-shadow: 0 1px 0 #c3c4c7 !important;
+    border-radius: 3px !important;
+    color: #2271b1 !important;
+    text-decoration: none !important;
+    padding: 2px 8px !important;
+    margin-left: 10px !important;
     font-size: 11px !important;
+    font-weight: 600 !important;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.polly-inline-fit-btn.polly-inline-compact:hover {
+    background: #f0f0f1 !important;
+    border-color: #8c8f94 !important;
+    color: #135e96 !important;
+}
+
+/* 2. Style the advisor text layout with Polly-green and safe left justification */
+.polly-standards-text {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    word-break: break-word !important;
+    text-align: left !important;
+    border-left: 3px solid #96BE2D !important; /* Vibrant Polly-green border accent */
+    padding-left: 12px !important;
+    margin: 12px 0 !important;
+}
+
+/* 3. Keep the decorative descriptor on a clean single line */
+.polly-decorative-wrap label {
+    white-space: nowrap !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.decorative-notice {
+    display: block !important;
+    white-space: normal !important; /* Allows the lower description text to wrap safely if needed */
 }
