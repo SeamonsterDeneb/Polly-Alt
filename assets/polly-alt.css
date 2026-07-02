@@ -503,6 +503,7 @@ textarea[data-setting="alt"],
 /* Choice and enforcement modals */
 .polly-choice-select-btn:focus,
 .polly-choice-select-btn:focus-visible,
+.polly-wizard-next-btn:focus-visible,
 #polly-alt-modal .polly-modal-edit-btn:focus-visible,
 #polly-alt-modal .polly-footer-btn:focus-visible,
 #polly-alt-modal .polly-modal-decorative-check:focus-visible,
@@ -760,4 +761,39 @@ textarea[data-setting="alt"],
 
 .polly-modal-fit-btn {
     margin-right: 5px;
+}
+
+/* =============================================================================
+   Gutenberg Page-wide Wizard Indicator Adjustments
+   ============================================================================= */
+
+.polly-wizard-step-indicator {
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.polly-wizard-next-btn {
+    background: #2271b1 !important;
+    border: 1px solid #135e96 !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    padding: 4px 12px !important;
+    height: 26px !important;
+    line-height: 16px !important;
+    cursor: pointer;
+    border-radius: 3px !important;
+    transition: background 0.1s ease, border-color 0.1s ease;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.polly-wizard-next-btn:hover {
+    background: #135e96 !important;
+    border-color: #0c3d61 !important;
+    color: #fff !important;
+}
+
+.polly-wizard-next-btn:active {
+    background: #0c3d61 !important;
+    border-color: #0c3d61 !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
 }

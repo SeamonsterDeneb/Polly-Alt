@@ -158,6 +158,12 @@
             updateCharCounter(field);
             updateButtonLabel(field);
 
+            // Smart journey tracking: shift focus to wizard button if active, otherwise fallback naturally
+            const wizardNextBtn = document.querySelector('.polly-wizard-step-indicator button');
+            if (wizardNextBtn) {
+                wizardNextBtn.focus();
+            }
+
             // 3. Inject the Side-by-Side Revision Assistant box directly below the control layout
             renderRevisionAssistant(field, oldText, refinedText);
 
@@ -1445,7 +1451,15 @@
                         updateButtonLabel(field);
                         field.dispatchEvent(new Event('input', { bubbles: true }));
                         if (onSelect) onSelect(finalVal);
-                        dismiss();
+                        
+                        // Smart journey tracking: find the wizard "Next Image" button if it exists
+                        const wizardNextBtn = document.querySelector('.polly-wizard-step-indicator button');
+                        if (wizardNextBtn) {
+                            dismiss();
+                            setTimeout(() => wizardNextBtn.focus(), 50);
+                        } else {
+                            dismiss();
+                        }
                     };
 
                     editBtn.onclick = (e) => {
@@ -1733,6 +1747,7 @@
     }
 
     initGutenbergSidebarWatcher();
+    initGutenbergPublishWizard();
 
     // -------------------------------------------------------------------------
     // Elementor media modal watcher
@@ -1899,4 +1914,199 @@
     initPolly();
     observer.observe(document.body, { childList: true, subtree: true });
 
+    // -------------------------------------------------------------------------
+    // Page-wide Gutenberg Save/Publish Interceptor Wizard (Diagnostic Version)
+    // -------------------------------------------------------------------------
+    function initGutenbergPublishWizard() {
+        console.log('🦜 POLLY DIAGNOSTIC: initGutenbergPublishWizard invoked.');
+        if (!document.body.classList.contains('block-editor-page')) {
+            console.log('🦜 POLLY DIAGNOSTIC: Not a block editor page. Aborting.');
+            return;
+        }
+        if (!window.wp?.data || !window.wp?.data.select) {
+            console.log('🦜 POLLY DIAGNOSTIC: wp.data or select missing. Aborting.');
+            return;
+        }
+
+        console.log('--- POLLY COMPLIANCE ACTIVE --- Watching Gutenberg Save States.');
+        let isLockedByPolly = false;
+
+        wp.data.subscribe(() => {
+            try {
+                const editorSelect = wp.data.select('core/editor');
+                if (!editorSelect) return;
+
+                const isSaving = editorSelect.isSavingPost();
+                const isPublishing = editorSelect.isPublishingPost();
+                const isAutosaving = editorSelect.isAutosavingPost();
+
+                // Spits out active state changes only when a save is attempted
+                if (isSaving || isPublishing) {
+                    console.log(`🦜 POLLY STATE CHECK -> isSaving: ${isSaving} | isPublishing: ${isPublishing} | isAutosaving: ${isAutosaving} | Currently Locked: ${isLockedByPolly}`);
+                }
+                
+                // Do not intercept background autosaves
+                if (isAutosaving) return;
+
+                if ((isSaving || isPublishing) && !isLockedByPolly) {
+                    const allBlocks = wp.data.select('core/block-editor').getBlocks();
+                    console.log(`开 POLLY AUDIT: Checking ${allBlocks.length} root-level blocks...`);
+                    
+                    const missingImageBlocks = [];
+
+                    function findUnaltedImages(blocksList) {
+                        blocksList.forEach(block => {
+                            if (block.name === 'core/image') {
+                                const alt = block.attributes?.alt ?? '';
+                                const isDeco = block.attributes?.className?.includes('is-decorative') || false;
+                                console.log(`🦜 POLLY AUDIT -> Found Image Block (${block.clientId}). Alt: "${alt}", Is Decorative: ${isDeco}`);
+                                if (!alt.trim() && !isDeco) {
+                                    missingImageBlocks.push(block);
+                                }
+                            }
+                            if (block.innerBlocks && block.innerBlocks.length > 0) {
+                                findUnaltedImages(block.innerBlocks);
+                            }
+                        });
+                    }
+                    
+                    findUnaltedImages(allBlocks);
+                    console.log(`🦜 POLLY AUDIT RESULT: Found ${missingImageBlocks.length} unalted image blocks.`);
+
+                    if (missingImageBlocks.length > 0) {
+                        console.log('🔒 POLLY LOCKING: Missing alt text detected! Attempting to drop core lock...');
+                        isLockedByPolly = true;
+                        
+                        // Fire lock command immediately
+                        wp.data.dispatch('core/editor').lockPostSaving('polly-compliance-lock');
+                        console.log('🔒 POLLY LOCK ENGAGED: polly-compliance-lock registered.');
+
+                        showGlobalEnforcementModal(missingImageBlocks, () => {
+                            console.log('🔓 POLLY UNLOCKING: User selected "Publish anyway". Releasing lock...');
+                            wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
+                            
+                            console.log('🔄 POLLY RE-SAVING: Re-triggering clean save track...');
+                            wp.data.dispatch('core/editor').savePost();
+                            setTimeout(() => { isLockedByPolly = false; }, 2000);
+                        }, () => {
+                            console.log('✏️ POLLY WIZARD: User selected "Guide me through them!". Releasing lock and initiating loop...');
+                            wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
+                            isLockedByPolly = false;
+                            startPollyWalkthrough(missingImageBlocks);
+                        });
+                    }
+                }
+            } catch (err) {
+                console.warn('Asynchronous Gutenberg compliance engine failure:', err);
+            }
+        });
+    }
+
+    function showGlobalEnforcementModal(blocks, onLeaveAnyway, onFixNow) {
+        if (document.getElementById('polly-enforcement-overlay')) return;
+
+        const count = blocks.length;
+        const noun = count === 1 ? 'image has' : 'images have';
+
+        const overlay = document.createElement('div');
+        overlay.id = 'polly-enforcement-overlay';
+        overlay.className = 'polly-alt-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'polly-enforcement-modal';
+        modal.className = 'polly-modal-alert';
+        modal.setAttribute('role', 'alertdialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.innerHTML = `
+            <div class="polly-modal-header">
+                <h3>🦜 Steady as she goes, Captain!</h3>
+            </div>
+            <div class="polly-modal-body">
+                <p class="polly-enforcement-alert-text">
+                    Hold fast! There are <strong>${count} hidden ${noun} no alternative text</strong> inside this post. 
+                    If you publish now, assistive screen readers will miss out entirely. Let Polly guide you through them!
+                </p>
+                <div class="polly-modal-btn-row">
+                    <button id="polly-wizard-fix-btn" class="button button-primary">✏️ Guide me through them!</button>
+                    <button id="polly-wizard-ignore-btn" class="button">Publish anyway</button>
+                </div>
+            </div>
+        `;
+
+        const cleanup = () => { overlay.remove(); modal.remove(); };
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+
+        document.getElementById('polly-wizard-fix-btn').onclick = () => { cleanup(); onFixNow(); };
+        document.getElementById('polly-wizard-ignore-btn').onclick = () => { cleanup(); onLeaveAnyway(); };
+        
+        document.getElementById('polly-wizard-fix-btn').focus();
+        trapFocus(modal);
+    }
+
+    function startPollyWalkthrough(blocks) {
+        let index = 0;
+
+        function walkNext() {
+            if (index >= blocks.length) {
+                // Flash an alert notice that compliance loops have resolved perfectly
+                const notice = document.createElement('div');
+                notice.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#46b450; color:#fff; padding:15px 25px; border-radius:4px; font-weight:bold; z-index:100000; box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+                notice.textContent = '🦜 Splendid! All images processed successfully.';
+                document.body.appendChild(notice);
+                setTimeout(() => notice.remove(), 4000);
+                return;
+            }
+
+            const currentBlock = blocks[index];
+            
+            // Step 1: Programmatically select the block inside Gutenberg context
+            wp.data.dispatch('core/block-editor').selectBlock(currentBlock.clientId);
+            
+            // Step 2: Scroll the editor view surface targeting the current selected target block nodes
+            setTimeout(() => {
+                const DOMElement = document.getElementById(`block-${currentBlock.clientId}`);
+                if (DOMElement) {
+                    DOMElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 50);
+
+            // Step 3: Open the right block configuration settings panel workspace
+            wp.data.dispatch('core/edit-post')?.openGeneralSidebar('edit-post/block');
+
+            // Step 4: Drop a subtle highlight notification box prompting user interaction next
+            setTimeout(() => {
+                const gutenbergAltField = document.querySelector('.components-panel__body textarea.components-textarea-control__input');
+                const pollyGenBtn = document.querySelector('.polly-action-row .polly-gen-btn');
+
+                if (pollyGenBtn) {
+                    pollyGenBtn.focus();
+                    
+                    // Inject a lightweight dynamic tooltip header guide indicator
+                    const tipContainer = pollyGenBtn.closest('.polly-action-row');
+                    tipContainer.querySelector('.polly-wizard-step-indicator')?.remove();
+                    
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'polly-wizard-step-indicator';
+                    stepIndicator.style.cssText = 'background:#f0f6fa; border-left:4px solid #2271b1; padding:8px 12px; margin-bottom:10px; font-size:12px; display:flex; justify-content:space-between; align-items:center;';
+                    stepIndicator.innerHTML = `
+                        <span><strong>Image ${index + 1} of ${blocks.length}</strong> needing alt text.</span>
+                        <button type="button" class="button button-small polly-wizard-next-btn">Next Image &rarr;</button>
+                    `;
+                    
+                    stepIndicator.querySelector('button').onclick = (e) => {
+                        e.preventDefault();
+                        stepIndicator.remove();
+                        index++;
+                        walkNext();
+                    };
+                    
+                    tipContainer.insertBefore(stepIndicator, pollyGenBtn);
+                }
+            }, 250);
+        }
+
+        walkNext();
+    }
 })();
