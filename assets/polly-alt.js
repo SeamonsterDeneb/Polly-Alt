@@ -261,7 +261,7 @@
             if (e.key !== 'Tab') return;
 
             const focusable = modal.querySelectorAll(
-                'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+                'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"]), .polly-modal-image-container'
             );
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
@@ -1206,7 +1206,7 @@
         modal.setAttribute('aria-modal', 'true');
 
         modal.innerHTML = `
-            <div class="polly-modal-image-container">
+            <div class="polly-modal-image-container" tabindex="0" aria-label="Preview of image being described">
                 <img src="${imgSrc}" alt="">
             </div>
             <div class="polly-modal-header"><h3></h3></div>
@@ -1278,8 +1278,15 @@
 
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
-        modal.setAttribute('tabindex', '-1');
-        modal.focus();
+        
+        // Target the newly interactive image frame for instant keyboard engine tracking
+        const imgContainer = modal.querySelector('.polly-modal-image-container');
+        if (imgContainer) {
+            imgContainer.focus();
+        } else {
+            modal.setAttribute('tabindex', '-1');
+            modal.focus();
+        }
 
         body.querySelector('#polly-generating-cancel-btn').onclick = dismiss;
 
