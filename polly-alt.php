@@ -2,15 +2,14 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 0.9.29
- * Author: Captain Accessible, SeaMonster Studios
+ * Version: 0.9.43' * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '0.9.29' );
+define( 'POLLY_ALT_VERSION', '0.9.43' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -40,7 +39,7 @@ function polly_alt_get_available_models() {
     // Fallback if the network call fails
     if ( is_wp_error( $response ) ) {
         return [
-            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback - API Connection Error)',
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback - API Connection Error)',
         ];
     }
 
@@ -49,7 +48,7 @@ function polly_alt_get_available_models() {
 
     if ( empty( $data['models'] ) || ! is_array( $data['models'] ) ) {
         return [
-            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback - Invalid API Response)',
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback - Invalid API Response)',
         ];
     }
 
@@ -82,7 +81,7 @@ function polly_alt_get_available_models() {
 
     if ( empty( $models ) ) {
         $models = [
-            'gemini-1.5-flash' => 'Gemini 1.5 Flash (Fallback)',
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback)',
         ];
     }
 
@@ -99,7 +98,7 @@ add_action( 'update_option_polly_alt_api_key', function () {
 add_action( 'admin_menu', function () {
     add_options_page(
         'Polly Alt Settings',
-        'Polly Alt AI',
+        'Polly Alt',
         'manage_options',
         'polly-alt-settings',
         'polly_alt_settings_page'
@@ -109,7 +108,7 @@ add_action( 'admin_menu', function () {
 function polly_alt_settings_page() {
     ?>
     <div class="wrap" style="max-width: 850px;">
-        <h1>🦜 Polly Alt AI Settings</h1>
+        <h1>🦜 Polly Alt Settings</h1>
         
         <div class="welcome-panel" style="padding: 20px; margin-top: 20px; background: #fff; border: 1px solid #ccd0d4; border-radius: 4px;">
             <div class="welcome-panel-content">
@@ -135,7 +134,7 @@ function polly_alt_settings_page() {
                     <div>
                         <strong style="display:block; font-size:14px; margin-bottom:5px;">🪵 Core Editor Compatibility</strong>
                         <p style="margin:0; font-size:13px; line-height:1.5; color:#50575e;">
-                            Polly tracks your context inside the **Gutenberg Block Editor** sidebar and **Elementor Media Panels** seamlessly. Just click an image block to trigger Polly's interface.
+                            Polly tracks your context inside the **Gutenberg Block Editor** sidebar and **Elementor Media Insert screen** seamlessly. Just click an image block to trigger Polly's interface.
                         </p>
                     </div>
                     <div>
@@ -193,7 +192,7 @@ add_action( 'admin_init', function () {
         if ( empty( $models ) ) {
             $models = [
                 'gemini-3.5-flash' => 'Gemini 3.5 Flash',
-                'gemini-1.5-pro'   => 'Gemini 1.5 Pro',
+                'gemini-3.5-pro'   => 'Gemini 3.5 Pro',
             ];
         }
 
@@ -216,20 +215,30 @@ add_action( 'admin_init', function () {
         }
 
         // 3. Check the database, defaulting to our dynamically calculated recommendation
-        $current_model = get_option( 'polly_alt_model', $recommended_model );
+        $saved_option  = get_option( 'polly_alt_model', '' );
+        $current_model = ( ! empty( $saved_option ) && array_key_exists( $saved_option, $models ) ) ? $saved_option : $recommended_model;
+        $has_key       = ! empty( get_option( 'polly_alt_api_key', '' ) );
         ?>
-        <select name="polly_alt_model" id="polly-alt-model" style="min-width: 250px;">
-            <?php foreach ( $models as $value => $label ) : 
-                // Dynamically append the label to the live recommended model
-                $display_label = ( $recommended_model === $value ) ? $label . ' (Recommended)' : $label;
-                ?>
-                <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $current_model, $value ); ?>>
-                    <?php echo esc_html( $display_label ); ?>
-                </option>
-            <?php endforeach; ?>
+        <select name="polly_alt_model" id="polly-alt-model" style="min-width: 250px;" <?php disabled( ! $has_key ); ?>>
+            <?php if ( ! $has_key ) : ?>
+                <option value="">— Key Required —</option>
+            <?php else : ?>
+                <?php foreach ( $models as $value => $label ) : 
+                    // Dynamically append the label to the live recommended model
+                    $display_label = ( $recommended_model === $value ) ? $label . ' (Recommended)' : $label;
+                    ?>
+                    <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $current_model, $value ); ?>>
+                        <?php echo esc_html( $display_label ); ?>
+                    </option>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </select>
         <p class="description">
-            Select the active Gemini model for image analysis. This list stays updated dynamically via Google's live endpoints.
+            <?php if ( $has_key ) : ?>
+                Select the active Gemini model for image analysis. This list stays updated dynamically via Google's live endpoints.
+            <?php else : ?>
+                <strong>Please add and save a valid Gemini API Key above to unlock model configuration options.</strong>
+            <?php endif; ?>
         </p>
         <?php
     }, 'polly-alt-settings', 'polly_main_section' );
@@ -294,6 +303,7 @@ add_filter( 'plugin_action_links_' . plugin_basename( POLLY_ALT_PLUGIN_FILE ), f
 // Clear the model list cache instantly if the API key setting is updated.
 add_action( 'update_option_polly_alt_api_key', function() {
     delete_transient( 'polly_alt_models_list' );
+    delete_option( 'polly_alt_model' ); // Force the configuration to re-evaluate the recommendation baseline
 });
 
 // =============================================================================
@@ -314,7 +324,7 @@ add_action( 'manage_media_custom_column', function ( $column_name, $attachment_i
     <div class="polly-list-field-container" data-id="<?php echo absint( $attachment_id ); ?>">
         <div class="polly-field-header">
             <label class="polly-custom-field-label" for="<?php echo esc_attr( $field_id ); ?>">Alt Text</label>
-            <span class="polly-char-counter">0 characters</span>
+            <div class="polly-char-counter">0 characters</div>
         </div>
         <textarea
             id="<?php echo esc_attr( $field_id ); ?>"
@@ -451,11 +461,12 @@ add_action('wp_ajax_polly_gemini_proxy', function() {
 
     $api_key = get_option('polly_alt_api_key', '');
     if (!$api_key) {
-        wp_send_json_error(['message' => 'No API key configured.'], 400);
+        $settings_url = esc_url( admin_url( 'options-general.php?page=polly-alt-settings' ) );
+        wp_send_json_error(['message' => 'No API key configured. <a href="' . $settings_url . '" target="_blank" rel="noopener">Go to settings to fix that (opens in a new tab).</a>'], 400);
     }
 
-    $model = sanitize_text_field(wp_unslash($_POST['model'] ?? 'gemini-2.0-flash'));
-    $body  = wp_unslash($_POST['payload'] ?? '');
+    $model = sanitize_text_field( wp_unslash( $_POST['model'] ?? 'gemini-3.5-flash' ) );
+    $body  = isset( $_POST['payload'] ) ? wp_unslash( $_POST['payload'] ) : '';
 
     $response = wp_remote_post(
         "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$api_key}",
@@ -508,7 +519,7 @@ add_action( 'admin_notices', function () {
     <script>
         jQuery(document).on('click', '.polly-view-hint-notice .notice-dismiss', function() {
             wp.ajax.post('polly_dismiss_view_notice', {
-                nonce: '<?php echo wp_create_nonce("polly_view_nonce"); ?>'
+                _ajax_nonce: '<?php echo wp_create_nonce("polly_view_nonce"); ?>'
             });
         });
     </script>
@@ -517,7 +528,7 @@ add_action( 'admin_notices', function () {
 
 // AJAX endpoint to save the user's dismissal choice
 add_action( 'wp_ajax_polly_dismiss_view_notice', function () {
-    check_ajax_referer( 'polly_view_nonce', 'nonce' );
+    check_ajax_referer( 'polly_view_nonce' );
     update_user_meta( get_current_user_id(), 'dismissed_polly_view_notice', true );
     wp_send_json_success();
 } );

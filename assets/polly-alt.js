@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v0.9.29
+ * Polly Alt AI - Logic v0.9.43
 **/
 (function () {
 
@@ -96,7 +96,7 @@
                     counter.after(inlineFitBtn);
                 }
             } else {
-                // Classic Media Library layout fallback
+                // Classic Media Library and Elementor panel fallback layout alignment
                 inlineFitBtn.className = 'polly-inline-fit-btn polly-inline-compact';
                 counter.insertAdjacentElement('afterend', inlineFitBtn);
             }
@@ -420,7 +420,7 @@
                 </p>
                 <div class="polly-modal-btn-row">
                     <button id="polly-stay-btn" class="button button-primary">
-                        ✏️ Let's add some alt right now!
+                        ✏️ Let's add some alt or Preview and Generate!
                     </button>
                     <button id="polly-leave-btn" class="button">
                         ${leaveLabel}
@@ -729,7 +729,7 @@
             container.innerHTML = `
                 <div class="polly-field-header">
                     <label class="polly-custom-field-label">Alt Text</label>
-                    <span class="polly-char-counter">0 characters</span>
+                    <div class="polly-char-counter">0 characters</div>
                 </div>
                 <textarea
                     class="polly-list-alt-field polly-uploader-field"
@@ -813,7 +813,7 @@
             const labelTarget = baseControl ? (baseControl.querySelector('.components-base-control__label-container') || baseControl.querySelector('.components-base-control__label')) : null;
             
             if (labelTarget && !baseControl.querySelector('.polly-char-counter')) {
-                const span = document.createElement('span');
+                const span = document.createElement('div');
                 span.className = 'polly-char-counter';
                 span.setAttribute('data-for', field.id || '');
                 span.style.cssText = 'margin-left: auto; font-weight: normal; font-size: 12px; display: inline-block;';
@@ -852,14 +852,14 @@
             header.className = 'polly-field-header';
             header.innerHTML = `
                 <label class="polly-custom-field-label" for="${internalId}">Alt Text</label>
-                <span class="polly-char-counter" data-for="${internalId}">0 characters</span>
+                <div class="polly-char-counter" data-for="${internalId}">0 characters</div>
             `;
             parent.insertBefore(header, field);
         } else {
             let counter = existingHeader?.querySelector('.polly-char-counter');
             if (!counter) {
                 // Native label exists but no counter yet — inject one after the label
-                counter = document.createElement('span');
+                counter = document.createElement('div');
                 counter.className = 'polly-char-counter';
                 counter.dataset.for = internalId;
                 counter.textContent = '0 characters';
@@ -970,37 +970,13 @@
     // -------------------------------------------------------------------------
 
     async function geminiRequest(proxyForm, retries = 3, delayMs = 5000) {
+        // Use the localized config URL, or fall back to the native WP global object, or build a hardcoded default path
+        const targetAjaxUrl = (config && config.ajaxUrl) 
+            ? config.ajaxUrl 
+            : (window.ajaxurl || '/wp-admin/admin-ajax.php');
+
         for (let attempt = 1; attempt <= retries; attempt++) {
-            const response = await fetch(config.ajaxUrl, {
-                method: 'POST',
-                body: proxyForm
-            });
-
-            const proxyData = await response.json();
-
-            if (proxyData.success) return proxyData;
-
-            const is429 = response.status === 429 ||
-                (proxyData.data?.message || '').toLowerCase().includes('resource exhausted') ||
-                (proxyData.data?.message || '').toLowerCase().includes('429');
-
-            if (is429 && attempt < retries) {
-                const wait = delayMs * attempt;
-                console.warn(`🦜 POLLY: Rate limited (attempt ${attempt}/${retries}). Retrying in ${wait / 1000}s…`);
-                await new Promise(resolve => setTimeout(resolve, wait));
-                continue;
-            }
-
-            throw new Error(proxyData.data?.message || 'Proxy error.');
-        }
-    }
-    // -------------------------------------------------------------------------
-    // AI generation 2
-    // -------------------------------------------------------------------------
-
-    async function geminiRequest(proxyForm, retries = 3, delayMs = 5000) {
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            const response = await fetch(config.ajaxUrl, {
+            const response = await fetch(targetAjaxUrl, {
                 method: 'POST',
                 body: proxyForm
             });
@@ -1057,10 +1033,9 @@
         }
 
         if (!apiSrc) {
-            const row = field.closest('tr, .media-item, .media-frame, .media-modal')
-                || field.closest('.attachment-details')?.parentElement;
-            let imgEl = row
-                ? row.querySelector('.column-thumbnail img, .pinkynail, .details-image, .thumbnail img, img')
+            const containerNode = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details, td, .image-details');
+            let imgEl = containerNode
+                ? containerNode.querySelector('.column-thumbnail img, .pinkynail, .details-image, .thumbnail img, img')
                 : null;
 
             if ((!imgEl || !imgEl.src) && document.querySelector('.media-modal')) {
@@ -1349,7 +1324,7 @@
                     content.className = 'polly-choice-content';
                     content.textContent = opt.alt;
 
-                    const charCount = document.createElement('span');
+                    const charCount = document.createElement('div');
                     charCount.className = 'polly-choice-char-count';
                     charCount.textContent = `${opt.alt.length} characters`;
                     charCount.classList.toggle('over-limit', opt.alt.length > 125);

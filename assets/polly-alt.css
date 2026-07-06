@@ -1,31 +1,34 @@
 /**
- * Polly Alt AI - Stylesheet v0.9.29
+ * Polly Alt AI - Stylesheet v0.9.41
  */
 
 /* =============================================================================
-   Field layout
+   Field layout - Stacked Column Normalization
    ============================================================================= */
+
+/* Force clean block flow down the media sidebar to prevent horizontal panel expansions */
+.setting.alt-text {
+    display: block !important;
+    width: 100% !important;
+    clear: both !important;
+    box-sizing: border-box !important;
+}
+
+/* Let the native WP label line stack cleanly on top */
+.setting.alt-text label.name {
+    display: block !important;
+    width: 100% !important;
+    float: none !important;
+    margin: 0 0 6px 0 !important;
+    padding: 0 !important;
+    text-align: left !important;
+}
 
 .polly-btn-wrapper {
     display: block;
     width: 100%;
     margin: 0;
     box-sizing: border-box;
-}
-
-/* Native WP modal alignment */
-.setting.alt-text label.name {
-    width: 30% !important;
-    float: left !important;
-    margin: 0 !important;
-    padding: 8px 0 !important;
-}
-
-.setting.alt-text .polly-field-header,
-.setting.alt-text .polly-btn-wrapper {
-    float: right !important;
-    /* width: 65% !important; */
-    clear: none !important;
 }
 
 /* =============================================================================
@@ -56,36 +59,29 @@
     font-weight: bold;
     color: #999;
     white-space: nowrap;
+    margin-bottom: 4px;
+    display: inline-block;
+    clear: both;
 }
 
-.setting.alt-text .polly-char-counter.over-limit,
-.polly-char-counter.over-limit,
-.polly-choice-char-count.over-limit {
-    color: #d63638;
+.over-limit {
+    color: darkred;
 }
 
-.setting.alt-text {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.setting.alt-text label.name {
-    flex: 1;
-    margin-bottom: 0;
-}
-
+/* Ensure structural container items pull inward cleanly away from panel tracks */
 .setting.alt-text .polly-char-counter {
-    flex: 0 0 auto;
-    margin-left: 8px;
-    margin-bottom: 0;
+    float: right;
+    margin-top: -26px; /* Pulls counter up cleanly in line with the label row */
 }
 
 .setting.alt-text .polly-btn-wrapper,
 .setting.alt-text .polly-action-row,
 .setting.alt-text .polly-standards-text,
 .setting.alt-text .polly-decorative-wrap {
-    flex: 0 0 100%;
+    display: block !important;
+    width: auto !important;
+    float: none !important;
+    clear: both !important;
 }
 
 /* =============================================================================
@@ -93,19 +89,20 @@
    ============================================================================= */
 
 .polly-action-row {
-    display: block;
-    width: 100%;
-    margin-top: 10px;
-    clear: both;
-    box-sizing: border-box;
+    display: block !important;
+    width: 100% !important;
+    margin: 18px 0 0 0 !important; /* Adds a clean 18px gap right above the button */
+    padding: 10px 10px !important; /* Forces the internal button to shrink safely away from the sidebar walls */
+    clear: both !important;
+    box-sizing: border-box !important;
 }
 
 .polly-gen-btn {
     cursor: pointer;
+    margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100% !important;
     padding: 10px 14px;
     background: #f6f7f7;
     border: 1px solid #2271b1 !important;
@@ -118,6 +115,13 @@
     text-align: center;
     box-sizing: border-box;
 }
+
+/* Ensure consistent component spacing inside Gutenberg sidebars */
+.components-base-control + .polly-action-row {
+    margin-top: 14px;
+    padding-top: 4px;
+}
+
 
 .polly-gen-btn:hover {
     background: #fff;
@@ -137,12 +141,11 @@
     font-size: 12px !important;
     line-height: 1.5;
     color: #666;
-    margin: 12px 0;
+    margin: 12px; /* Constrains margin evenly on all sides */
     display: block;
     padding-left: 12px;
     border-left: 3px solid #2271b1;
     clear: both;
-    width: 100%;
     box-sizing: border-box;
 }
 
@@ -151,13 +154,12 @@
    ============================================================================= */
 
 .polly-decorative-wrap {
-    margin: 12px 0 15px 0;
+    margin: 12px; /* Pulls the decorative gray background block safely away from sidebar panels */
     padding: 12px;
     background: #f9f9f9;
     border: 1px solid #ddd;
     border-radius: 4px;
     clear: both;
-    width: 100%;
     box-sizing: border-box;
 }
 
