@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v0.9.45
+ * Polly Alt AI - Logic v1.0.0
 **/
 (function () {
 
@@ -2084,4 +2084,201 @@
 
         walkNext();
     }
-})();
+    // =========================================================================
+    // POLLY ALT — MEDIA GRID VIEW COMPLIANCE SCANNER
+    // =========================================================================
+    if (window.location.pathname.indexOf('upload.php') !== -1 && !window.location.search.includes('mode=list')) {
+        
+        function pollyAuditMediaGrid() {
+            if (typeof wp === 'undefined' || !wp.media || !wp.media.frame) return;
+
+            var library = wp.media.frame.state().get('library');
+            if (!library) return;
+
+            var missingAltCount = 0;
+
+            // Audit the active Backbone attachment memory models
+            library.each(function(attachment) {
+                var mime = attachment.get('mime');
+                if (mime && mime.indexOf('image/') !== -1) {
+                    var altText = attachment.get('alt');
+                    if (!altText || altText.trim() === '') {
+                        missingAltCount++;
+                    }
+                }
+            });
+
+            if (missingAltCount > 0) {
+                pollyShowGridWarning(missingAltCount);
+            } else {
+                jQuery('#polly-grid-warning-notice').remove();
+            }
+        }
+
+        function pollyShowGridWarning(count) {
+            // Remove older dynamic wizard tips on this specific view to avoid interface clutter
+            jQuery('.polly-wizard-step-indicator').remove();
+
+            if (jQuery('#polly-grid-warning-notice').length === 0) {
+                var noticeHtml = `
+                    <div id="polly-grid-warning-notice" class="notice" style="margin: 20px 0 10px 0; padding: 14px 18px; background: #faffeb; border: 1px solid #e1ebc6; border-left: 5px solid #96be2d; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <p style="margin: 0; font-size: 14px; line-height: 1.5; display: flex; align-items: center; gap: 10px; color: #2c3338;">
+                            <span style="font-size: 18px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));">🦜</span> 
+                            <span>
+                                <strong>Ahoy, Admin!</strong> Polly detected <strong>${count} image(s)</strong> on this screen missing alternative text descriptions. 
+                                Switch to the <a href="upload.php?mode=list" style="text-decoration: underline; font-weight: 600; color: #2271b1; transition: color 0.1s ease-in-out;">List View layout</a> to let Polly help you patch them up!
+                            </span>
+                        </p>
+                    </div>`;
+                
+                jQuery('.wp-header-end').after(noticeHtml);
+            } else {
+                jQuery('#polly-grid-warning-notice strong:eq(1)').text(count + ' image(s)');
+            }
+        }
+
+        // Wait brief second for the Backbone frame layout to mount completely
+        setTimeout(function() {
+            pollyAuditMediaGrid();
+            if (wp.media.frame.state().get('library')) {
+                wp.media.frame.state().get('library').on('add remove reset', pollyAuditMediaGrid);
+            }
+        }, 500);
+    }
+
+    // =========================================================================
+    // POLLY ALT — MEDIA LIST VIEW NAVIGATION CONTROLLER
+    // =========================================================================
+    if (window.location.pathname.indexOf('upload.php') !== -1 && window.location.search.includes('mode=list')) {
+        
+        // Step 1: Structural layout styles for the dynamic compliance framing
+        jQuery('head').append(`
+            <style>
+                /* Class custom styles applied to empty alt containers */
+                .polly-empty-alt-target textarea {
+                    border: 2px solid #cc1818 !important;
+                    background-color: #fff5f5 !important;
+                    transition: all 0.3s ease-in-out;
+                }
+                /* Focus indicator active state */
+                .polly-empty-alt-target.polly-active-focus textarea {
+                    background-color: #ffebeb !important;
+                    box-shadow: 0 0 0 2px rgba(204, 24, 24, 0.2) !important;
+                }
+            </style>
+        `);
+
+        jQuery(document).ready(function($) {
+            var emptyAltElements = [];
+            var currentNavIndex = 0;
+
+            function pollyAnalyzeListView() {
+                emptyAltElements = [];
+                
+                // Inspect row entries inside the main table container
+                $('table.wp-list-table tbody tr').each(function() {
+                    var $row = $(this);
+                    var $textarea = $row.find('textarea');
+                    
+                    if ($textarea.length) {
+                        var textVal = $textarea.val();
+                        if (!textVal || textVal.trim() === '') {
+                            $row.addClass('polly-empty-alt-target');
+                            emptyAltElements.push($row);
+                        }
+                    }
+                });
+
+                if (emptyAltElements.length > 0) {
+                    pollyRenderListNavigationNotice(emptyAltElements.length);
+                } else {
+                    $('#polly-list-nav-notice').remove();
+                }
+            }
+
+            function pollyRenderListNavigationNotice(count) {
+                if ($('#polly-list-nav-notice').length === 0) {
+                    var noticeHtml = `
+                        <div id="polly-list-nav-notice" class="notice" style="margin: 20px 0 10px 0; padding: 14px 18px; background: #faffeb; border: 1px solid #e1ebc6; border-left: 5px solid #96be2d; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <p style="margin: 0; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: #2c3338;">
+                                <span style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 18px;">🦜</span>
+                                    <span>Polly found <strong id="polly-nav-count">${count} un-described image(s)</strong> in this list batch. Let's get 'em patched!</span>
+                                </span>
+                                <button type="button" id="polly-jump-next-btn" class="button button-primary" style="background: #2271b1; border-color: #2271b1; font-weight: 600; padding: 0 14px; height: 32px; line-height: 30px;">
+                                    Jump to Next Missing Alt &rarr;
+                                </button>
+                            </p>
+                        </div>`;
+                    
+                    $('.wp-header-end').after(noticeHtml);
+
+                    // Click handler sequence jumps view target dynamically
+                    $(document).on('click', '#polly-jump-next-btn', function(e) {
+                        e.preventDefault();
+                        
+                        // Re-filter the array matrix live to drop elements that were recently filled out
+                        emptyAltElements = emptyAltElements.filter(function($row) {
+                            return $row.hasClass('polly-empty-alt-target');
+                        });
+
+                        if (emptyAltElements.length === 0) {
+                            $('#polly-list-nav-notice').slideUp(200, function() { $(this).remove(); });
+                            return;
+                        }
+
+                        if (currentNavIndex >= emptyAltElements.length) {
+                            currentNavIndex = 0; // Index wrap boundaries
+                        }
+
+                        var $nextRow = emptyAltElements[currentNavIndex];
+                        
+                        $('.wp-list-table tr').removeClass('polly-active-focus');
+                        $nextRow.addClass('polly-active-focus');
+
+                        $('html, body').animate({
+                            scrollTop: $nextRow.offset().top - 140
+                        }, 400, function() {
+                            $nextRow.find('textarea').first().focus();
+                        });
+
+                        currentNavIndex++;
+                    });
+                } else {
+                    $('#polly-nav-count').text(count + ' un-described image(s)');
+                }
+            }
+
+            // LIVE MONITOR MECHANISMS: Listens for textual changes or programmatic text insertions
+            $(document).on('input keyup change propertychange', 'table.wp-list-table tbody tr textarea', function() {
+                var $textarea = $(this);
+                var $row = $textarea.closest('tr');
+                
+                if ($textarea.val() && $textarea.val().trim() !== '') {
+                    // Strips the crimson warning classes immediately when text content appears
+                    if ($row.hasClass('polly-empty-alt-target')) {
+                        $row.removeClass('polly-empty-alt-target polly-active-focus');
+                        
+                        // Recalculate remaining empty counts to keep the upper dashboard notice accurate
+                        var remainingCount = $('table.wp-list-table tbody tr.polly-empty-alt-target').length;
+                        if (remainingCount > 0) {
+                            $('#polly-nav-count').text(remainingCount + ' un-described image(s)');
+                        } else {
+                            $('#polly-list-nav-notice').slideUp(200, function() { $(this).remove(); });
+                        }
+                    }
+                } else {
+                    // Restores the warning indicators if the text gets erased manually
+                    if (!$row.hasClass('polly-empty-alt-target')) {
+                        $row.addClass('polly-empty-alt-target');
+                        pollyAnalyzeListView();
+                    }
+                }
+            });
+
+            // Run latency invocation layout mount delay
+            setTimeout(pollyAnalyzeListView, 500);
+        });
+    }
+
+})(jQuery);

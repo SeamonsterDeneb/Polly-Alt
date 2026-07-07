@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Stylesheet v0.9.41
+ * Polly Alt AI - Stylesheet v1.0.0
  */
 
 /* =============================================================================
@@ -377,7 +377,7 @@ textarea[data-setting="alt"],
 }
 
 /* =============================================================================
-   Enforcement modal
+   Enforcement modal - Strict Dual-Engine Normalization
    ============================================================================= */
 
 #polly-enforcement-overlay {
@@ -393,36 +393,119 @@ textarea[data-setting="alt"],
     position: fixed;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    background: #fff;
-    border-radius: 12px;
-    width: 480px;
-    max-width: 90vw;
+    background: #fff !important;
+    border-radius: 12px !important;
+    width: 520px !important;
+    max-width: 90vw !important;
     z-index: 10000000;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4) !important;
+    overflow: hidden !important;
     animation: polly-slide-in 0.2s ease;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    box-sizing: border-box !important;
 }
 
+/* Force headers to match across both layout containers */
 #polly-enforcement-modal .polly-modal-header {
-    background: #2271b1;
-    padding: 20px 25px;
-    border-bottom: none;
+    background: #fff !important;
+    padding: 28px 28px 10px 28px !important;
+    border-bottom: none !important;
+    display: block !important;
 }
 
 #polly-enforcement-modal .polly-modal-header h3 {
-    margin: 0;
-    color: #fff;
-    font-size: 20px;
+    margin: 0 !important;
+    color: #2271b1 !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
 }
 
+/* Balance body spacing context */
 #polly-enforcement-modal .polly-modal-body {
-    padding: 25px;
+    padding: 10px 28px 28px 28px !important;
+    background: #fff !important;
 }
 
-#polly-enforcement-modal .polly-modal-body p {
-    margin: 0 0 5px 0;
-    color: #333;
+.polly-enforcement-alert-text {
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    color: #444 !important;
+    margin: 0 0 24px 0 !important;
+    display: block !important;
+}
+
+/* Restrain button container grids */
+#polly-enforcement-modal .polly-modal-btn-row {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 12px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+}
+
+/* Unify button baselines and neutralize external framework resets */
+#polly-enforcement-modal #polly-stay-btn,
+#polly-enforcement-modal #polly-leave-btn {
+    flex: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    padding: 0 16px !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    transition: background 0.1s ease, border-color 0.1s ease !important;
+}
+
+/* Stay Button Theme */
+#polly-enforcement-modal #polly-stay-btn {
+    background: #2271b1 !important;
+    border: 1px solid #2271b1 !important;
+    color: #fff !important;
+}
+
+#polly-enforcement-modal #polly-stay-btn:hover {
+    background: #135e96 !important;
+    border-color: #135e96 !important;
+    color: #fff !important;
+}
+
+/* Leave Button Theme */
+#polly-enforcement-modal #polly-leave-btn {
+    background: #f6f7f7 !important;
+    border: 1px solid #dcdcde !important;
+    color: #3c434a !important;
+}
+
+#polly-enforcement-modal #polly-leave-btn:hover {
+    background: #f0f0f1 !important;
+    border-color: #8c8f94 !important;
+    color: #1d2327 !important;
+}
+
+/* Dedicated Focus Resets for the Enforcement Modal Buttons */
+#polly-enforcement-modal #polly-stay-btn:focus,
+#polly-enforcement-modal #polly-stay-btn:focus-visible {
+    outline: 3px solid #96BE2D !important; /* Scaled cleanly down to match standard layout dimensions */
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(150, 190, 45, 0.4) !important;
+}
+
+#polly-enforcement-modal #polly-leave-btn:focus,
+#polly-enforcement-modal #polly-leave-btn:focus-visible {
+    outline: 3px solid #2271b1 !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(34, 113, 177, 0.4) !important;
 }
 
 @keyframes polly-fade-in {
