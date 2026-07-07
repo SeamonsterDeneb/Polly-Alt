@@ -2,14 +2,17 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 0.9.43' * Author: Captain Accessible, SeaMonster Studios
+ * Version: 0.9.45
+ * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
+ * License: GPL v2 or later
+* License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '0.9.43' );
+define( 'POLLY_ALT_VERSION', '0.9.45' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -303,7 +306,6 @@ add_filter( 'plugin_action_links_' . plugin_basename( POLLY_ALT_PLUGIN_FILE ), f
 // Clear the model list cache instantly if the API key setting is updated.
 add_action( 'update_option_polly_alt_api_key', function() {
     delete_transient( 'polly_alt_models_list' );
-    delete_option( 'polly_alt_model' ); // Force the configuration to re-evaluate the recommendation baseline
 });
 
 // =============================================================================
