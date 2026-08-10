@@ -882,3 +882,14 @@ textarea[data-setting="alt"],
     border-color: #0c3d61 !important;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
 }
+
+.polly-page-context {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #f0f6fc;
+    border-left: 3px solid #72aee6;
+    font-size: 12px;
+    line-height: 1.4;
+}
+.polly-page-context-label { font-weight: 600; margin-bottom: 4px; }
+.polly-page-context-item { color: #444; margin-top: 2px; }

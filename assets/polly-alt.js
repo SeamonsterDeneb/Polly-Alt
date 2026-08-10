@@ -22,6 +22,30 @@
         return url.replace(/-\d+x\d+(?=\.(jpg|jpeg|png|gif|webp))/i, '');
     }
 
+    function escapeHtml(str) {
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function buildPageContextBox(pageContext) {
+        if (!pageContext || (!pageContext.paragraphsBefore && !pageContext.paragraphsAfter)) return null;
+
+        const box = document.createElement('div');
+        box.className = 'polly-page-context';
+        box.innerHTML = `
+            <div class="polly-page-context-label">🦜 Page context:</div>
+            ${pageContext.paragraphsBefore ? `<div class="polly-page-context-item"><strong>Before:</strong> "${escapeHtml(pageContext.paragraphsBefore)}"</div>` : ''}
+            ${pageContext.paragraphsAfter ? `<div class="polly-page-context-item"><strong>After:</strong> "${escapeHtml(pageContext.paragraphsAfter)}"</div>` : ''}
+        `;
+        return box;
+    }
+
+    function renderPageContext(pageContext, anchorEl, position = 'afterend') {
+        const existing = anchorEl.parentNode?.querySelector('.polly-page-context');
+        if (existing) existing.remove();
+
+        const box = buildPageContextBox(pageContext);
+        if (box) anchorEl.insertAdjacentElement(position, box);
+    }
     /**
      * Detect MIME type from a URL's file extension.
      * Falls back to image/jpeg for unknown types.
@@ -203,10 +227,7 @@
             <p class="polly-revision-assistant-footer">Use the snippet targets above to copy visual items from your previous draft back into your active description field if needed.</p>
         `;
 
-        // Simple local string escaping to protect DOM parsing limits
-        function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
+        
 
         // Wire up interactions inside the block workspace
         assistant.querySelector('.polly-dismiss-assistant').onclick = () => assistant.remove();
@@ -925,6 +946,19 @@
         advisor.parentNode.insertBefore(decoWrap, advisor.nextSibling);
 
         const decoCheck = decoWrap.querySelector('.polly-decorative-check');
+        // --- Page context preview (Gutenberg only, for now) ---
+        if (document.body.classList.contains('block-editor-page') && window.wp?.data) {
+            try {
+                const selectedBlock = wp.data.select('core/block-editor').getSelectedBlock();
+                if (selectedBlock?.name === 'core/image') {
+                    const pageContext = getGutenbergPageContext(selectedBlock);
+                    renderPageContext(pageContext, decoWrap);
+                }
+            } catch (e) {
+                console.warn('🦜 POLLY: Could not build page context for media modal:', e);
+            }
+        }
+
         decoCheck.addEventListener('change', () => {
             const id = resolveAttachmentId(field);
             if (decoCheck.checked) {
@@ -1000,7 +1034,7 @@
         }
     }
 
-    async function triggerGeneration(field, attachmentId) {
+    async function triggerGeneration(field, attachmentId, pageContext = null) {
         const btn = document.querySelector(`.polly-gen-btn[data-for="${field.id}"]`);
         const originalLabel = btn.textContent;
         btn.textContent = 'Thinking…';
@@ -1058,8 +1092,17 @@
 
         // Open the dialog right away — image on top, tips on the bottom —
         // while Polly is still talking to the AI.
-        const modalCtl = showGeneratingModal(highResSrc, btn);
+        const modalCtl = showGeneratingModal(highResSrc, btn, pageContext);
         const mimeType = mimeTypeFromUrl(highResSrc);
+
+        let contextBlock = '';
+        if (pageContext && (pageContext.paragraphsBefore || pageContext.paragraphsAfter)) {
+            contextBlock =
+                `SURROUNDING PAGE TEXT (for context only — do not copy phrasing or repeat facts already stated):\n` +
+                (pageContext.paragraphsBefore ? `Before the image: "${pageContext.paragraphsBefore}"\n` : '') +
+                (pageContext.paragraphsAfter ? `After the image: "${pageContext.paragraphsAfter}"\n` : '') +
+                `\n`;
+        }
 
         const prompt =
             `You are an accessibility expert writing alt text for a web image. ` +
@@ -1069,6 +1112,7 @@
             `- Do NOT begin with "image of", "photo of", "picture of", or similar\n` +
             `- Write in plain language, present tense, active voice\n` +
             `- Include only what is visible — no interpretation or assumptions\n\n` +
+            contextBlock +
             `VARIATIONS:\n` +
             `Each variation must foreground a DIFFERENT visible subject or element from the image as its opening focus — ` +
             `the thing named first in the alt text should differ across all variations. ` +
@@ -1217,14 +1261,14 @@
      * Returns a controller used to later fill in real choices, show an error,
      * or check whether the person already dismissed it.
      */
-    function showGeneratingModal(imgSrc, triggerBtn) {
+    function showGeneratingModal(imgSrc, triggerBtn, pageContext = null) {
         const { overlay, modal, body, headerEl } = buildAltModalShell(imgSrc);
         modal.setAttribute('aria-label', 'Generating Alt Text');
         headerEl.textContent = '🦜 Hang tight…';
 
         body.innerHTML = `
             <p class="polly-modal-intro">
-                Get a good look at the image while I'm working on some alt text options for you…
+                Get a good look at the image and think about it in its context while I'm working on some alt text options for you…
             </p>
             <div class="polly-tip-rotator" aria-live="polite">
                 <span class="polly-tip-text"></span>
@@ -1233,6 +1277,9 @@
                 <button type="button" id="polly-generating-cancel-btn" class="button polly-cancel-btn">Cancel</button>
             </div>
         `;
+
+        const generatingContextBox = buildPageContextBox(pageContext);
+        if (generatingContextBox) body.insertBefore(generatingContextBox, body.firstChild);
 
         const tipText = body.querySelector('.polly-tip-text');
         let tipIndex = Math.floor(Math.random() * ALT_TEXT_TIPS.length);
@@ -1302,6 +1349,9 @@
                 headerEl.textContent = '🦜 Choose Alt Text';
                 modal.setAttribute('aria-label', 'Choose Alt Text');
                 body.innerHTML = '';
+
+                const contextBox = buildPageContextBox(pageContext);
+                if (contextBox) body.appendChild(contextBox);
 
                 const options = [];
                 if (original) options.push({ alt: original, label: 'ORIGINAL', explanation: 'Your current text.' });
@@ -1508,6 +1558,69 @@
             },
         };
     }
+
+    // Walks sibling blocks (via the block data model, not the DOM) to find
+    // preceding/following paragraph-like text — the Gutenberg equivalent of
+    // the Chrome extension's DOM-based extractImageContext().
+    function getGutenbergPageContext(block) {
+        const context = { isFunctional: false, functionalRole: '', destination: '', paragraphsBefore: '', paragraphsAfter: '' };
+        if (!block || !window.wp?.data) return context;
+
+        const TEXT_BLOCKS = ['core/paragraph', 'core/heading', 'core/list', 'core/quote'];
+
+        function stripTags(html) {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html || '';
+            return (tmp.textContent || '').trim();
+        }
+
+        function extractBlockText(b) {
+            if (!b || !TEXT_BLOCKS.includes(b.name)) return '';
+            const txt = stripTags(b.attributes?.content || '');
+            return txt.length > 20 ? txt : '';
+        }
+
+        try {
+            const editorSelect = wp.data.select('core/block-editor');
+            let rootClientId = editorSelect.getBlockRootClientId(block.clientId);
+            let siblings = editorSelect.getBlocks(rootClientId || undefined);
+            let index = siblings.findIndex(b => b.clientId === block.clientId);
+
+            // If the image is alone inside a wrapper (e.g. a single Column),
+            // step up one level and look at the wrapper's own siblings instead.
+            if (siblings.length <= 1 && rootClientId) {
+                const parentRoot = editorSelect.getBlockRootClientId(rootClientId);
+                const parentSiblings = editorSelect.getBlocks(parentRoot || undefined);
+                const parentIndex = parentSiblings.findIndex(b => b.clientId === rootClientId);
+                if (parentIndex !== -1) {
+                    siblings = parentSiblings;
+                    index = parentIndex;
+                }
+            }
+
+            if (index === -1) return context;
+
+            const beforeTexts = [];
+            for (let i = index - 1; i >= 0 && beforeTexts.length < 2; i--) {
+                const txt = extractBlockText(siblings[i]);
+                if (txt) beforeTexts.unshift(txt);
+            }
+
+            const afterTexts = [];
+            for (let i = index + 1; i < siblings.length && afterTexts.length < 1; i++) {
+                const txt = extractBlockText(siblings[i]);
+                if (txt) afterTexts.push(txt);
+            }
+
+            context.paragraphsBefore = beforeTexts.join('\n\n');
+            context.paragraphsAfter = afterTexts.join('\n\n');
+        } catch (e) {
+            console.warn('🦜 POLLY: Error building Gutenberg page context:', e);
+        }
+
+        return context;
+    }
+
     // -------------------------------------------------------------------------
     // Gutenberg image block helper
     // -------------------------------------------------------------------------
@@ -1598,6 +1711,8 @@
 
             const getAttachmentId = () => getBlockData()?.attributes?.id || null;
 
+            renderPageContext(getGutenbergPageContext(getBlockData()), field.closest('.components-base-control'), 'beforebegin');
+
             // Give the field a stable operational ID for character counting lookups
             if (!field.id) {
                 field.id = 'polly-gutenberg-field-' + (getAttachmentId() || Math.random().toString(36).slice(2, 9));
@@ -1623,7 +1738,9 @@
                 }
                 if (!field.id) field.id = 'polly-gutenberg-field-' + id;
                 btn.dataset.for = field.id;
-                triggerGeneration(field, String(id));
+                const pageContext = getGutenbergPageContext(getBlockData());
+                renderPageContext(pageContext, field.closest('.components-base-control'), 'beforebegin');
+                triggerGeneration(field, String(id), pageContext);
             };
             actionRow.appendChild(btn);
             field.closest('.components-base-control').after(actionRow);
