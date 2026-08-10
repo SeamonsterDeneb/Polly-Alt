@@ -26,16 +26,61 @@
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
+    function truncateForDisplay(text, max = 160) {
+        if (text.length <= max) return text;
+        return text.slice(0, max).trim() + '…';
+    }
+
+    function buildPageContextItem(label, text) {
+        const truncated = truncateForDisplay(text);
+        const needsToggle = truncated !== text;
+
+        const item = document.createElement('div');
+        item.className = 'polly-page-context-item';
+
+        const strong = document.createElement('strong');
+        strong.textContent = label + ': ';
+        item.appendChild(strong);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'polly-context-text';
+        textSpan.textContent = `"${truncated}"`;
+        item.appendChild(textSpan);
+
+        if (needsToggle) {
+            item.appendChild(document.createTextNode(' '));
+            const toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'polly-context-toggle';
+            toggleBtn.textContent = 'Show more';
+            toggleBtn.dataset.expanded = 'false';
+            toggleBtn.onclick = (e) => {
+                e.preventDefault();
+                const expanded = toggleBtn.dataset.expanded === 'true';
+                textSpan.textContent = expanded ? `"${truncated}"` : `"${text}"`;
+                toggleBtn.textContent = expanded ? 'Show more' : 'Show less';
+                toggleBtn.dataset.expanded = expanded ? 'false' : 'true';
+            };
+            item.appendChild(toggleBtn);
+        }
+
+        return item;
+    }
+
     function buildPageContextBox(pageContext) {
         if (!pageContext || (!pageContext.paragraphsBefore && !pageContext.paragraphsAfter)) return null;
 
         const box = document.createElement('div');
         box.className = 'polly-page-context';
-        box.innerHTML = `
-            <div class="polly-page-context-label">🦜 Page context:</div>
-            ${pageContext.paragraphsBefore ? `<div class="polly-page-context-item"><strong>Before:</strong> "${escapeHtml(pageContext.paragraphsBefore)}"</div>` : ''}
-            ${pageContext.paragraphsAfter ? `<div class="polly-page-context-item"><strong>After:</strong> "${escapeHtml(pageContext.paragraphsAfter)}"</div>` : ''}
-        `;
+
+        const label = document.createElement('div');
+        label.className = 'polly-page-context-label';
+        label.textContent = '🦜 Page context:';
+        box.appendChild(label);
+
+        if (pageContext.paragraphsBefore) box.appendChild(buildPageContextItem('Before', pageContext.paragraphsBefore));
+        if (pageContext.paragraphsAfter) box.appendChild(buildPageContextItem('After', pageContext.paragraphsAfter));
+
         return box;
     }
 
@@ -1098,10 +1143,13 @@
         let contextBlock = '';
         if (pageContext && (pageContext.paragraphsBefore || pageContext.paragraphsAfter)) {
             contextBlock =
-                `SURROUNDING PAGE TEXT (for context only — do not copy phrasing or repeat facts already stated):\n` +
+                `SURROUNDING PAGE TEXT:\n` +
                 (pageContext.paragraphsBefore ? `Before the image: "${pageContext.paragraphsBefore}"\n` : '') +
                 (pageContext.paragraphsAfter ? `After the image: "${pageContext.paragraphsAfter}"\n` : '') +
-                `\n`;
+                `\nUse this surrounding text to decide which visible details matter most. ` +
+                `Don't just restate a fact the text already gives (a name, a place, a number) — ` +
+                `but let it steer which visual elements you foreground. ` +
+                `At least one variation should make the connection between what's visible and what the surrounding text is about clearly obvious, not just implied.\n\n`;
         }
 
         const prompt =
@@ -1122,7 +1170,10 @@
             `Return ONLY a valid JSON array of objects with these exact keys:\n` +
             `- "alt": the alt text string (100-125 characters, verified)\n` +
             `- "focus": a short noun phrase naming the visual element foregrounded in this variation (e.g. "orange coffee harvester", "rows of green coffee trees", "hillside coffee farm")\n` +
-            `- "explanation": one sentence explaining why a screen reader user might find this framing useful\n\n` +
+            `- "explanation": one sentence explaining why a screen reader user might find this framing useful` +
+            (pageContext && (pageContext.paragraphsBefore || pageContext.paragraphsAfter)
+                ? ` — for at least one variation, explicitly name how this framing connects to the surrounding page text\n\n`
+                : `\n\n`) +
             `Do not include any text outside the JSON array.`;
 
         try {

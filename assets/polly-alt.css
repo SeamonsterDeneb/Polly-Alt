@@ -893,3 +893,9 @@ textarea[data-setting="alt"],
 }
 .polly-page-context-label { font-weight: 600; margin-bottom: 4px; }
 .polly-page-context-item { color: #444; margin-top: 2px; }
+
+.polly-context-toggle {
+    background: none; border: none; padding: 0;
+    color: #2271b1; text-decoration: underline;
+    font-size: 12px; cursor: pointer;
+}
