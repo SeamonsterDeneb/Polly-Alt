@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.0.0
+ * Polly Alt AI - Logic v1.0.1
 **/
 (function () {
 
@@ -913,6 +913,8 @@
 
         const nativeLabel = field.closest('.setting')?.querySelector('label.name');
 
+        let pollyHeaderEl = existingHeader || nativeLabel || null;
+
         if (!existingHeader && !nativeLabel) {
             const header = document.createElement('div');
             header.className = 'polly-field-header';
@@ -921,6 +923,7 @@
                 <div class="polly-char-counter" data-for="${internalId}">0 characters</div>
             `;
             parent.insertBefore(header, field);
+            pollyHeaderEl = header;
         } else {
             let counter = existingHeader?.querySelector('.polly-char-counter');
             if (!counter) {
@@ -956,7 +959,9 @@
             e.preventDefault();
             e.stopPropagation();
             const id = resolveAttachmentId(field);
-            triggerGeneration(field, id);
+            const livePageContext = isElementorEditor() ? getElementorPageContext() : mediaModalPageContext;
+            if (isElementorEditor()) renderPageContext(livePageContext, pollyHeaderEl, 'beforebegin');
+            triggerGeneration(field, id, livePageContext);
         };
 
         actionRow.appendChild(btn);
@@ -991,16 +996,25 @@
         advisor.parentNode.insertBefore(decoWrap, advisor.nextSibling);
 
         const decoCheck = decoWrap.querySelector('.polly-decorative-check');
-        // --- Page context preview (Gutenberg only, for now) ---
+
+        // --- Page context preview (Gutenberg + Elementor) ---
+        let mediaModalPageContext = null;
         if (document.body.classList.contains('block-editor-page') && window.wp?.data) {
             try {
                 const selectedBlock = wp.data.select('core/block-editor').getSelectedBlock();
                 if (selectedBlock?.name === 'core/image') {
-                    const pageContext = getGutenbergPageContext(selectedBlock);
-                    renderPageContext(pageContext, decoWrap);
+                    mediaModalPageContext = getGutenbergPageContext(selectedBlock);
+                    renderPageContext(mediaModalPageContext, pollyHeaderEl, 'beforebegin');
                 }
             } catch (e) {
                 console.warn('🦜 POLLY: Could not build page context for media modal:', e);
+            }
+        } else if (isElementorEditor()) {
+            try {
+                mediaModalPageContext = getElementorPageContext();
+                renderPageContext(mediaModalPageContext, pollyHeaderEl, 'beforebegin');
+            } catch (e) {
+                console.warn('🦜 POLLY: Could not build Elementor page context for media modal:', e);
             }
         }
 
@@ -1672,6 +1686,80 @@
         return context;
     }
 
+    // Locates the widget currently selected in Elementor via elementor.selection,
+    // finds its real node inside the preview iframe's DOM, and walks sibling
+    // .elementor-element wrappers for text — the Elementor equivalent of the
+    // Chrome extension's DOM-based extractImageContext().
+    function getElementorPageContext() {
+        const context = { isFunctional: false, functionalRole: '', destination: '', paragraphsBefore: '', paragraphsAfter: '' };
+        if (!window.elementor?.selection) return context;
+
+        try {
+            const el = elementor.selection.getElements()[0];
+            if (!el || !el.id) return context;
+
+            const iframeDoc = document.querySelector('#elementor-preview-iframe')?.contentDocument;
+            if (!iframeDoc) return context;
+
+            const widgetEl = iframeDoc.querySelector(`[data-id="${el.id}"]`);
+            if (!widgetEl) return context;
+
+            // 1. Functional role check (image wrapped in a link)
+            const linkParent = widgetEl.querySelector('a') || widgetEl.closest('a');
+            if (linkParent) {
+                context.isFunctional = true;
+                context.functionalRole = 'link';
+                context.destination = linkParent.getAttribute('href') || linkParent.getAttribute('aria-label') || '';
+                return context;
+            }
+
+            // Helper: pull paragraph-like text out of a sibling .elementor-element wrapper
+            function extractTextFromWrapper(wrapperEl) {
+                if (!wrapperEl || wrapperEl.nodeType !== 1) return [];
+                const texts = Array.from(wrapperEl.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote'))
+                    .map(p => p.innerText ? p.innerText.trim() : '')
+                    .filter(txt => txt.length > 20);
+                if (texts.length > 0) return texts;
+                const fallback = wrapperEl.innerText ? wrapperEl.innerText.trim() : '';
+                return (fallback.length > 20 && fallback.length < 1500) ? [fallback] : [];
+            }
+
+            // 2. Walk PRECEDING sibling wrappers
+            const beforeTexts = [];
+            let curr = widgetEl;
+            while (curr && curr !== iframeDoc.body && beforeTexts.length < 2) {
+                if (curr.previousElementSibling) {
+                    curr = curr.previousElementSibling;
+                    extractTextFromWrapper(curr).forEach(txt => {
+                        if (!beforeTexts.includes(txt)) beforeTexts.unshift(txt);
+                    });
+                } else {
+                    curr = curr.parentElement;
+                }
+            }
+
+            // 3. Walk FOLLOWING sibling wrappers
+            const afterTexts = [];
+            curr = widgetEl;
+            while (curr && curr !== iframeDoc.body && afterTexts.length < 1) {
+                if (curr.nextElementSibling) {
+                    curr = curr.nextElementSibling;
+                    extractTextFromWrapper(curr).forEach(txt => {
+                        if (!afterTexts.includes(txt)) afterTexts.push(txt);
+                    });
+                } else {
+                    curr = curr.parentElement;
+                }
+            }
+
+            context.paragraphsBefore = beforeTexts.slice(-2).join('\n\n');
+            context.paragraphsAfter = afterTexts.slice(0, 1).join('\n\n');
+        } catch (e) {
+            console.warn('🦜 POLLY: Error building Elementor page context:', e);
+        }
+
+        return context;
+    }
     // -------------------------------------------------------------------------
     // Gutenberg image block helper
     // -------------------------------------------------------------------------

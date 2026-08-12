@@ -31,6 +31,10 @@
     box-sizing: border-box;
 }
 
+.polly-page-context .polly-page-context-item .polly-context-text {
+    text-align: left;
+}
+
 /* =============================================================================
    Field header (label + counter)
    ============================================================================= */
@@ -72,6 +76,12 @@
 .setting.alt-text .polly-char-counter {
     float: right;
     margin-top: -26px; /* Pulls counter up cleanly in line with the label row */
+}
+
+/* When a page-context box precedes the label, the pull-up above overlaps it —
+   cancel it so the counter sits normally instead of climbing into the box. */
+.setting.alt-text .polly-page-context ~ .polly-char-counter {
+    margin-top: 4px;
 }
 
 .setting.alt-text .polly-btn-wrapper,
@@ -890,9 +900,25 @@ textarea[data-setting="alt"],
     border-left: 3px solid #72aee6;
     font-size: 12px;
     line-height: 1.4;
+    text-align: left;
+    float: none;
+    clear: both;
+    overflow: hidden; /* clearfix — keeps any inherited floats contained inside the box */
+    box-sizing: border-box;
 }
-.polly-page-context-label { font-weight: 600; margin-bottom: 4px; }
-.polly-page-context-item { color: #444; margin-top: 2px; }
+.polly-page-context-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    text-align: left;
+    float: none;
+}
+.polly-page-context-item {
+    color: #444;
+    margin-top: 2px;
+    text-align: left;
+    float: none;
+    clear: both;
+}
 
 .polly-context-toggle {
     background: none; border: none; padding: 0;
