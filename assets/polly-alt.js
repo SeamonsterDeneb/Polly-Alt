@@ -2520,4 +2520,94 @@
         });
     }
 
+    // -------------------------------------------------------------------------
+    // Elementor Inline Sidebar Panel Integration
+    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+// Elementor Inline Sidebar Panel Integration
+// -------------------------------------------------------------------------
+    function initElementorSidebarPanel() {
+        if (!document.body.classList.contains('elementor-editor-active')) return;
+
+        const panelObserver = new MutationObserver(() => {
+            const panel = document.getElementById('elementor-panel-content-wrapper');
+            if (!panel) return;
+
+            // 1. Ensure we are inside the Image widget controls panel
+            const imageControl = panel.querySelector('.elementor-control-image');
+            if (!imageControl || panel.querySelector('.polly-elementor-sidebar-container')) return;
+
+            // 2. Resolve the active widget element and attachment ID
+            let attachmentId = null;
+            let activeWidget = null;
+
+            try {
+                activeWidget = window.elementor?.selection?.getElements()[0];
+                const imageSetting = activeWidget?.model?.get('settings')?.get('image');
+                attachmentId = imageSetting?.id || null;
+            } catch (e) {
+                console.warn('🦜 POLLY: Could not resolve Elementor attachment ID:', e);
+            }
+
+            if (!attachmentId) {
+                const mediaBtn = imageControl.querySelector('[data-elementor-setting="image"]');
+                if (mediaBtn?.dataset?.id) attachmentId = mediaBtn.dataset.id;
+            }
+
+            // 3. Create the sidebar container box
+            const pollyBox = document.createElement('div');
+            pollyBox.className = 'polly-elementor-sidebar-container elementor-control elementor-label-inline';
+            pollyBox.style.cssText = 'margin-top: 15px; padding: 12px; background: #f7f7f7; border: 1px solid #dcdcde; border-radius: 4px;';
+
+            const fieldId = 'polly-elementor-sidebar-alt-' + (attachmentId || Math.random().toString(36).slice(2, 7));
+
+            pollyBox.innerHTML = `
+                <div class="polly-list-field-container" data-id="${attachmentId || ''}">
+                    <textarea
+                        id="${fieldId}"
+                        class="polly-custom-textarea polly-list-alt-field polly-elementor-field"
+                        placeholder="Please add alternative text for blind and low-vision users"
+                        style="width:100%; min-height:70px; margin-top:6px;"
+                    ></textarea>
+                </div>
+            `;
+
+            // Insert right after the Link control
+            const targetControl = panel.querySelector('.elementor-control-link') || imageControl;
+            targetControl.after(pollyBox);
+
+            const textarea = pollyBox.querySelector('textarea');
+            if (!textarea) return;
+
+            // 4. Populate current alt text from WordPress attachment model
+            if (attachmentId && window.wp?.media?.attachment) {
+                const attachment = wp.media.attachment(attachmentId);
+                attachment.fetch().done(() => {
+                    const existingAlt = attachment.get('alt') || '';
+                    textarea.value = existingAlt;
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            }
+
+            // 5. Sync edits back to Elementor's live widget model
+            textarea.addEventListener('input', () => {
+                if (activeWidget?.model) {
+                    const currentImg = activeWidget.model.get('settings').get('image') || {};
+                    activeWidget.model.setSetting('image', {
+                        ...currentImg,
+                        alt: textarea.value
+                    });
+                }
+            });
+
+            // 6. Initialize Polly UI controls (Button, Counter, Standards Advisor, Decorative Checkbox)
+            initPolly();
+        });
+
+        const panelEl = document.getElementById('elementor-panel') || document.body;
+        panelObserver.observe(panelEl, { childList: true, subtree: true });
+    }
+    
+    // Fire observer on editor initialization
+    initElementorSidebarPanel();
 })(jQuery);
