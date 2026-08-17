@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 1.0.1
+ * Version: 1.0.0
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '1.0.1' );
+define( 'POLLY_ALT_VERSION', '1.0.0' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -162,11 +162,26 @@ function polly_alt_settings_page() {
 }
 
 add_action( 'admin_init', function () {
-    register_setting( 'polly_alt_group', 'polly_alt_api_key' );
-    register_setting( 'polly_alt_group', 'polly_alt_model' );
-    register_setting( 'polly_alt_group', 'polly_alt_choices' );
-    register_setting( 'polly_alt_group', 'polly_alt_remove_title' );
-    register_setting( 'polly_alt_group', 'polly_alt_include_explanation' );
+    register_setting( 'polly_alt_group', 'polly_alt_api_key', [
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_model', [
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_choices', [
+        'type'              => 'integer',
+        'sanitize_callback' => 'absint',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_remove_title', [
+        'type'              => 'boolean',
+        'sanitize_callback' => 'rest_sanitize_boolean',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_include_explanation', [
+        'type'              => 'boolean',
+        'sanitize_callback' => 'rest_sanitize_boolean',
+    ] );
 
     add_settings_section( 'polly_main_section', "Ship's Logs & API", null, 'polly-alt-settings' );
 

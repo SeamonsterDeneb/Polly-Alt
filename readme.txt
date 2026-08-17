@@ -2,7 +2,7 @@
 Contributors: seamonsterdeneb
 Tags: accessibility, alt text, gemini ai, image descriptions, a11y
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 7.1
 Stable tag: 1.0.1
 Requires PHP: 7.4
 License: GPLv2 or later
@@ -44,6 +44,14 @@ Never. Polly Alt operates on a strict human-in-the-loop review architecture. The
 
 = 1.0.0 =
 * Launching Polly Alt v1.0.0 — Complete integration with Gutenberg and Elementor modalities.
+
+== External services ==
+
+This plugin connects to external APIs to analyze image media and generate descriptions:
+
+* Google Gemini API: Sends image data and surrounding post text to Google's Gemini models when generating alt text suggestions.
+* Terms of Service: https://policies.google.com/terms
+* Privacy Policy: https://policies.google.com/privacy
 
 == Screenshots ==
 

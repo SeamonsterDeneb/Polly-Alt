@@ -2149,17 +2149,13 @@
     // Page-wide Gutenberg Save/Publish Interceptor Wizard (Diagnostic Version)
     // -------------------------------------------------------------------------
     function initGutenbergPublishWizard() {
-        console.log('🦜 POLLY DIAGNOSTIC: initGutenbergPublishWizard invoked.');
         if (!document.body.classList.contains('block-editor-page')) {
-            console.log('🦜 POLLY DIAGNOSTIC: Not a block editor page. Aborting.');
             return;
         }
         if (!window.wp?.data || !window.wp?.data.select) {
-            console.log('🦜 POLLY DIAGNOSTIC: wp.data or select missing. Aborting.');
             return;
         }
 
-        console.log('--- POLLY COMPLIANCE ACTIVE --- Watching Gutenberg Save States.');
         let isLockedByPolly = false;
 
         wp.data.subscribe(() => {
@@ -2170,18 +2166,12 @@
                 const isSaving = editorSelect.isSavingPost();
                 const isPublishing = editorSelect.isPublishingPost();
                 const isAutosaving = editorSelect.isAutosavingPost();
-
-                // Spits out active state changes only when a save is attempted
-                if (isSaving || isPublishing) {
-                    console.log(`🦜 POLLY STATE CHECK -> isSaving: ${isSaving} | isPublishing: ${isPublishing} | isAutosaving: ${isAutosaving} | Currently Locked: ${isLockedByPolly}`);
-                }
                 
                 // Do not intercept background autosaves
                 if (isAutosaving) return;
 
                 if ((isSaving || isPublishing) && !isLockedByPolly) {
                     const allBlocks = wp.data.select('core/block-editor').getBlocks();
-                    console.log(`开 POLLY AUDIT: Checking ${allBlocks.length} root-level blocks...`);
                     
                     const missingImageBlocks = [];
 
@@ -2190,7 +2180,6 @@
                             if (block.name === 'core/image') {
                                 const alt = block.attributes?.alt ?? '';
                                 const isDeco = block.attributes?.className?.includes('is-decorative') || false;
-                                console.log(`🦜 POLLY AUDIT -> Found Image Block (${block.clientId}). Alt: "${alt}", Is Decorative: ${isDeco}`);
                                 if (!alt.trim() && !isDeco) {
                                     missingImageBlocks.push(block);
                                 }
@@ -2202,25 +2191,19 @@
                     }
                     
                     findUnaltedImages(allBlocks);
-                    console.log(`🦜 POLLY AUDIT RESULT: Found ${missingImageBlocks.length} unalted image blocks.`);
 
                     if (missingImageBlocks.length > 0) {
-                        console.log('🔒 POLLY LOCKING: Missing alt text detected! Attempting to drop core lock...');
                         isLockedByPolly = true;
                         
                         // Fire lock command immediately
                         wp.data.dispatch('core/editor').lockPostSaving('polly-compliance-lock');
-                        console.log('🔒 POLLY LOCK ENGAGED: polly-compliance-lock registered.');
 
                         showGlobalEnforcementModal(missingImageBlocks, () => {
-                            console.log('🔓 POLLY UNLOCKING: User selected "Publish anyway". Releasing lock...');
                             wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
                             
-                            console.log('🔄 POLLY RE-SAVING: Re-triggering clean save track...');
                             wp.data.dispatch('core/editor').savePost();
                             setTimeout(() => { isLockedByPolly = false; }, 2000);
                         }, () => {
-                            console.log('✏️ POLLY WIZARD: User selected "Guide me through them!". Releasing lock and initiating loop...');
                             wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
                             isLockedByPolly = false;
                             startPollyWalkthrough(missingImageBlocks);
