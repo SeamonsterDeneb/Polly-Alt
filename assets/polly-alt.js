@@ -42,9 +42,12 @@
         strong.textContent = label + ': ';
         item.appendChild(strong);
 
+        const renderFormattedContext = (str) =>
+            `"${escapeHtml(str).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}"`;
+
         const textSpan = document.createElement('span');
         textSpan.className = 'polly-context-text';
-        textSpan.textContent = `"${truncated}"`;
+        textSpan.innerHTML = renderFormattedContext(truncated);
         item.appendChild(textSpan);
 
         if (needsToggle) {
@@ -57,7 +60,7 @@
             toggleBtn.onclick = (e) => {
                 e.preventDefault();
                 const expanded = toggleBtn.dataset.expanded === 'true';
-                textSpan.textContent = expanded ? `"${truncated}"` : `"${text}"`;
+                textSpan.innerHTML = renderFormattedContext(expanded ? truncated : text);
                 toggleBtn.textContent = expanded ? 'Show more' : 'Show less';
                 toggleBtn.dataset.expanded = expanded ? 'false' : 'true';
             };
@@ -1665,20 +1668,26 @@
 
             if (index === -1) return context;
 
-            const beforeTexts = [];
-            for (let i = index - 1; i >= 0 && beforeTexts.length < 2; i--) {
-                const txt = extractBlockText(siblings[i]);
-                if (txt) beforeTexts.unshift(txt);
+            let hBefore = null, pBefore = null;
+            for (let i = index - 1; i >= 0 && (!hBefore || !pBefore); i--) {
+                const b = siblings[i];
+                const txt = extractBlockText(b);
+                if (!txt) continue;
+                if (b.name === 'core/heading' && !hBefore) hBefore = { i, txt: `**${txt}**` };
+                else if (b.name !== 'core/heading' && !pBefore) pBefore = { i, txt };
             }
 
-            const afterTexts = [];
-            for (let i = index + 1; i < siblings.length && afterTexts.length < 1; i++) {
-                const txt = extractBlockText(siblings[i]);
-                if (txt) afterTexts.push(txt);
+            let hAfter = null, pAfter = null;
+            for (let i = index + 1; i < siblings.length && (!hAfter || !pAfter); i++) {
+                const b = siblings[i];
+                const txt = extractBlockText(b);
+                if (!txt) continue;
+                if (b.name === 'core/heading' && !hAfter) hAfter = { i, txt: `**${txt}**` };
+                else if (b.name !== 'core/heading' && !pAfter) pAfter = { i, txt };
             }
 
-            context.paragraphsBefore = beforeTexts.join('\n\n');
-            context.paragraphsAfter = afterTexts.join('\n\n');
+            context.paragraphsBefore = [hBefore, pBefore].filter(Boolean).sort((a, b) => a.i - b.i).map(x => x.txt).join('\n\n');
+            context.paragraphsAfter = [hAfter, pAfter].filter(Boolean).sort((a, b) => a.i - b.i).map(x => x.txt).join('\n\n');
         } catch (e) {
             console.warn('🦜 POLLY: Error building Gutenberg page context:', e);
         }
@@ -1724,36 +1733,33 @@
                 return (fallback.length > 20 && fallback.length < 1500) ? [fallback] : [];
             }
 
-            // 2. Walk PRECEDING sibling wrappers
-            const beforeTexts = [];
-            let curr = widgetEl;
-            while (curr && curr !== iframeDoc.body && beforeTexts.length < 2) {
-                if (curr.previousElementSibling) {
-                    curr = curr.previousElementSibling;
-                    extractTextFromWrapper(curr).forEach(txt => {
-                        if (!beforeTexts.includes(txt)) beforeTexts.unshift(txt);
-                    });
-                } else {
-                    curr = curr.parentElement;
-                }
-            }
+            const allElements = Array.from(iframeDoc.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, blockquote'))
+                .filter(el => !widgetEl.contains(el) && (el.innerText || '').trim().length > 15);
 
-            // 3. Walk FOLLOWING sibling wrappers
-            const afterTexts = [];
-            curr = widgetEl;
-            while (curr && curr !== iframeDoc.body && afterTexts.length < 1) {
-                if (curr.nextElementSibling) {
-                    curr = curr.nextElementSibling;
-                    extractTextFromWrapper(curr).forEach(txt => {
-                        if (!afterTexts.includes(txt)) afterTexts.push(txt);
-                    });
-                } else {
-                    curr = curr.parentElement;
-                }
-            }
+            let hBefore = null, pBefore = null;
+            let hAfter = null, pAfter = null;
 
-            context.paragraphsBefore = beforeTexts.slice(-2).join('\n\n');
-            context.paragraphsAfter = afterTexts.slice(0, 1).join('\n\n');
+            allElements.forEach(el => {
+                const txt = el.innerText.trim();
+                const isH = /^H[1-6]$/i.test(el.tagName);
+                const pos = el.compareDocumentPosition(widgetEl);
+
+                if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    if (isH) hBefore = { el, txt: `**${txt}**` };
+                    else pBefore = { el, txt };
+                } else if (pos & Node.DOCUMENT_POSITION_PRECEDING) {
+                    if (isH && !hAfter) hAfter = { el, txt: `**${txt}**` };
+                    else if (!isH && !pAfter) pAfter = { el, txt };
+                }
+            });
+
+            context.paragraphsBefore = [hBefore, pBefore].filter(Boolean)
+                .sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+                .map(x => x.txt).join('\n\n');
+
+            context.paragraphsAfter = [hAfter, pAfter].filter(Boolean)
+                .sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+                .map(x => x.txt).join('\n\n');
         } catch (e) {
             console.warn('🦜 POLLY: Error building Elementor page context:', e);
         }
@@ -2520,94 +2526,138 @@
         });
     }
 
-    // -------------------------------------------------------------------------
-    // Elementor Inline Sidebar Panel Integration
-    // -------------------------------------------------------------------------
-    // -------------------------------------------------------------------------
-// Elementor Inline Sidebar Panel Integration
 // -------------------------------------------------------------------------
-    function initElementorSidebarPanel() {
-        if (!document.body.classList.contains('elementor-editor-active')) return;
+// Elementor Inline Sidebar Panel Integration (Panel v1 + v2 compatible)
+// -------------------------------------------------------------------------
+function initElementorSidebarPanel() {
+    const isElementorEditor = () =>
+        document.body.classList.contains('elementor-editor-active') ||
+        !!document.getElementById('elementor-editor-wrapper');
+    if (!isElementorEditor()) return;
+
+    // Unwraps Elementor 4's Atomic prop-type envelopes, e.g.
+    // { $$type: 'image', value: { src: { $$type: 'image-src', value: { id: { $$type: 'image-attachment-id', value: 162 } } } } }
+    // Walks down through nested { $$type, value } layers looking for a plain number/string at `key`.
+    function unwrapAtomicValue(node, key) {
+        if (!node || typeof node !== 'object') return null;
+        if (key in node && node[key] !== undefined) {
+            const v = node[key];
+            if (v && typeof v === 'object' && 'value' in v) return unwrapAtomicValue(v, 'value');
+            return v;
+        }
+        if ('value' in node) return unwrapAtomicValue(node.value, key);
+        return null;
+    }
+
+        function resolveAttachmentId(imageSetting) {
+        if (!imageSetting) return null;
+        if (typeof imageSetting !== 'object') return imageSetting;
+        if (imageSetting.id || imageSetting.attachment_id) return imageSetting.id || imageSetting.attachment_id;
+        const src = imageSetting.value?.src;
+        const id = src?.value?.id;
+        if (id && typeof id === 'object' && 'value' in id) return id.value;
+        return unwrapAtomicValue(imageSetting, 'id');
+    }
+
+    function getVisibleElementorPanel() {
+        // Modern React/MUI panel (v2) — prefer this if present and visible.
+        const muiPanel = document.querySelector('.MuiDrawer-paper');
+        if (muiPanel && !muiPanel.closest('[hidden], [inert]')) return muiPanel;
+
+        // Legacy classic panel — only valid if it's not the dormant v2 shell.
+        const legacyPanel = document.getElementById('elementor-panel-content-wrapper');
+        if (legacyPanel && !legacyPanel.closest('[hidden], [inert]')) return legacyPanel;
+
+        const fallback = document.getElementById('elementor-panel');
+        if (fallback && !fallback.closest('[hidden], [inert]')) return fallback;
+
+        return null; // nothing visible to inject into right now
+    }
+
+    // Atomic/MUI panel has no legacy `.elementor-control-*` classes.
+    // Anchor to the semantic "Image" field label instead — stable across
+    // Elementor versions, unlike the hashed `eui-xxxxx` utility classes.
+    function findAtomicImageControl(panel) {
+        const label = Array.from(panel.querySelectorAll('label'))
+            .find(l => l.textContent.trim() === 'Image');
+        return label?.closest('[data-type="settings-field"]') || null;
+    }
 
         const panelObserver = new MutationObserver(() => {
-            const panel = document.getElementById('elementor-panel-content-wrapper');
+            const panel = getVisibleElementorPanel();
             if (!panel) return;
 
-            // 1. Ensure we are inside the Image widget controls panel
-            const imageControl = panel.querySelector('.elementor-control-image');
-            if (!imageControl || panel.querySelector('.polly-elementor-sidebar-container')) return;
-
-            // 2. Resolve the active widget element and attachment ID
-            let attachmentId = null;
             let activeWidget = null;
+        let attachmentId = null;
 
-            try {
-                activeWidget = window.elementor?.selection?.getElements()[0];
-                const imageSetting = activeWidget?.model?.get('settings')?.get('image');
-                attachmentId = imageSetting?.id || null;
-            } catch (e) {
-                console.warn('🦜 POLLY: Could not resolve Elementor attachment ID:', e);
+        try {
+            activeWidget = window.elementor?.selection?.getElements?.()[0] || null;
+            if (!activeWidget) return;
+
+            const settings = activeWidget.model?.get?.('settings');
+            const imageSetting = settings?.get ? settings.get('image') : null;
+            attachmentId = resolveAttachmentId(imageSetting);
+        } catch (e) {
+            console.warn('🦜 POLLY: Could not resolve Elementor widget selection:', e);
+        }
+
+        const existingBox = document.querySelector('.polly-elementor-sidebar-container');
+        if (existingBox) {
+            if (attachmentId && existingBox.dataset.pollyAttachmentId === String(attachmentId)) {
+                return; // already rendered for this image
             }
+            existingBox.remove();
+        }
 
-            if (!attachmentId) {
-                const mediaBtn = imageControl.querySelector('[data-elementor-setting="image"]');
-                if (mediaBtn?.dataset?.id) attachmentId = mediaBtn.dataset.id;
-            }
+        if (!attachmentId) return;
 
-            // 3. Create the sidebar container box
-            const pollyBox = document.createElement('div');
-            pollyBox.className = 'polly-elementor-sidebar-container elementor-control elementor-label-inline';
-            pollyBox.style.cssText = 'margin-top: 15px; padding: 12px; background: #f7f7f7; border: 1px solid #dcdcde; border-radius: 4px;';
+        const targetControl = findAtomicImageControl(panel) || panel.querySelector(
+            '.elementor-control-media-area, .elementor-control-media__preview, .elementor-control-image_size, .elementor-control-media, [data-setting="image_size"]'
+        );
+        if (!targetControl || targetControl.closest('[hidden], [inert]')) return;
 
-            const fieldId = 'polly-elementor-sidebar-alt-' + (attachmentId || Math.random().toString(36).slice(2, 7));
+        const pollyBox = document.createElement('div');
+        pollyBox.className = 'polly-elementor-sidebar-container elementor-control elementor-label-inline';
+        pollyBox.dataset.pollyAttachmentId = String(attachmentId);
+        pollyBox.style.cssText = 'margin-top: 15px; padding: 12px; background: #f7f7f7; border: 1px solid #dcdcde; border-radius: 4px;';
 
-            pollyBox.innerHTML = `
-                <div class="polly-list-field-container" data-id="${attachmentId || ''}">
-                    <textarea
-                        id="${fieldId}"
-                        class="polly-custom-textarea polly-list-alt-field polly-elementor-field"
-                        placeholder="Please add alternative text for blind and low-vision users"
-                        style="width:100%; min-height:70px; margin-top:6px;"
-                    ></textarea>
-                </div>
-            `;
+        const fieldId = 'polly-elementor-sidebar-alt-' + attachmentId;
+        pollyBox.innerHTML = `
+            <div class="polly-list-field-container" data-id="${attachmentId}">
+                <textarea
+                    id="${fieldId}"
+                    class="polly-custom-textarea polly-list-alt-field polly-elementor-field"
+                    placeholder="Please add alternative text for blind and low-vision users"
+                    style="width:100%; min-height:70px; margin-top:6px;"
+                ></textarea>
+            </div>
+        `;
 
-            // Insert right after the Link control
-            const targetControl = panel.querySelector('.elementor-control-link') || imageControl;
-            targetControl.after(pollyBox);
+        targetControl.closest('.elementor-control')?.after(pollyBox) || targetControl.after(pollyBox);
 
-            const textarea = pollyBox.querySelector('textarea');
-            if (!textarea) return;
+        const textarea = pollyBox.querySelector('textarea');
+        if (!textarea) return;
 
-            // 4. Populate current alt text from WordPress attachment model
-            if (attachmentId && window.wp?.media?.attachment) {
-                const attachment = wp.media.attachment(attachmentId);
-                attachment.fetch().done(() => {
-                    const existingAlt = attachment.get('alt') || '';
-                    textarea.value = existingAlt;
-                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                });
-            }
-
-            // 5. Sync edits back to Elementor's live widget model
-            textarea.addEventListener('input', () => {
-                if (activeWidget?.model) {
-                    const currentImg = activeWidget.model.get('settings').get('image') || {};
-                    activeWidget.model.setSetting('image', {
-                        ...currentImg,
-                        alt: textarea.value
-                    });
-                }
+        if (attachmentId && window.wp?.media?.attachment) {
+            const attachment = wp.media.attachment(attachmentId);
+            attachment.fetch().done(() => {
+                textarea.value = attachment.get('alt') || '';
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
             });
+        }
 
-            // 6. Initialize Polly UI controls (Button, Counter, Standards Advisor, Decorative Checkbox)
-            initPolly();
+        textarea.addEventListener('input', () => {
+            if (activeWidget?.model) {
+                const currentImg = activeWidget.model.get('settings')?.get('image') || {};
+                activeWidget.model.setSetting('image', { ...currentImg, alt: textarea.value });
+            }
         });
 
-        const panelEl = document.getElementById('elementor-panel') || document.body;
-        panelObserver.observe(panelEl, { childList: true, subtree: true });
-    }
-    
-    // Fire observer on editor initialization
-    initElementorSidebarPanel();
+        initPolly();
+    });
+
+    const panelEl = document.getElementById('elementor-panel') || document.body;
+panelObserver.observe(panelEl, { childList: true, subtree: true, attributes: true, characterData: true });}
+
+initElementorSidebarPanel();
 })(jQuery);
