@@ -105,18 +105,44 @@
     }
 
     /**
-     * Fetch an image and return its base64-encoded data (without the data: prefix).
-     * Throws on network failure so the caller can handle it.
+     * Fetch an image and return its base64-encoded data (compressed to max 1024px).
      */
-    async function getBase64(url) {
+    async function getBase64(url, maxDim = 1024) {
+        console.log('🦜 POLLY DEBUG: Fetching image URL:', url);
         const resp = await fetch(url);
         if (!resp.ok) throw new Error(`Could not fetch image (HTTP ${resp.status})`);
         const blob = await resp.blob();
+
         return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = () => reject(new Error('FileReader failed'));
-            reader.readAsDataURL(blob);
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.onload = () => {
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                const base64Data = dataUrl.split(',')[1];
+                console.log(`🦜 POLLY DEBUG: Image resized to ${width}x${height}px (~${(base64Data.length * 0.75 / 1024).toFixed(1)} KB base64 payload)`);
+                resolve(base64Data);
+            };
+            img.onerror = () => reject(new Error('Image element decoding failed'));
+            img.src = URL.createObjectURL(blob);
         });
     }
 
@@ -364,8 +390,31 @@
         return typeof pagenow !== 'undefined' && (pagenow === 'upload' || pagenow === 'media');
     }
 
-    function isElementorEditor() {
+        function isElementorEditor() {
         return document.body.classList.contains('elementor-editor-active');
+    }
+
+    // Unwraps Elementor 4's Atomic prop-type envelopes, e.g.
+    // { $$type: 'image', value: { src: { $$type: 'image-src', value: { id: { $$type: 'image-attachment-id', value: 162 } } } } }
+    function unwrapAtomicValue(node, key) {
+        if (!node || typeof node !== 'object') return null;
+        if (key in node && node[key] !== undefined) {
+            const v = node[key];
+            if (v && typeof v === 'object' && 'value' in v) return unwrapAtomicValue(v, 'value');
+            return v;
+        }
+        if ('value' in node) return unwrapAtomicValue(node.value, key);
+        return null;
+    }
+
+    function resolveElementorAttachmentId(imageSetting) {
+        if (!imageSetting) return null;
+        if (typeof imageSetting !== 'object') return imageSetting;
+        if (imageSetting.id || imageSetting.attachment_id) return imageSetting.id || imageSetting.attachment_id;
+        const src = imageSetting.value?.src;
+        const id = src?.value?.id;
+        if (id && typeof id === 'object' && 'value' in id) return id.value;
+        return unwrapAtomicValue(imageSetting, 'id');
     }
 
     function isEditScreen() {
@@ -1151,6 +1200,8 @@
             highResSrc = getHighResUrl(imgEl.src);
             apiSrc = imgEl.src;
         }
+
+        console.log('🦜 POLLY DEBUG: Preparing generation for ID:', attachmentId, '| apiSrc:', apiSrc, '| highResSrc:', highResSrc);
 
         // Open the dialog right away — image on top, tips on the bottom —
         // while Polly is still talking to the AI.
@@ -2247,8 +2298,8 @@
                     If you publish now, assistive screen readers will miss out entirely. Let Polly guide you through them!
                 </p>
                 <div class="polly-modal-btn-row">
-                    <button id="polly-wizard-fix-btn" class="button button-primary">✏️ Guide me through them!</button>
-                    <button id="polly-wizard-ignore-btn" class="button">Publish anyway</button>
+                    <button id="polly-stay-btn" class="button button-primary">✏️ Guide me through them!</button>
+                    <button id="polly-leave-btn" class="button">Publish anyway</button>
                 </div>
             </div>
         `;
@@ -2258,10 +2309,10 @@
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
 
-        document.getElementById('polly-wizard-fix-btn').onclick = () => { cleanup(); onFixNow(); };
-        document.getElementById('polly-wizard-ignore-btn').onclick = () => { cleanup(); onLeaveAnyway(); };
+        document.getElementById('polly-stay-btn').onclick = () => { cleanup(); onFixNow(); };
+        document.getElementById('polly-leave-btn').onclick = () => { cleanup(); onLeaveAnyway(); };
         
-        document.getElementById('polly-wizard-fix-btn').focus();
+        document.getElementById('polly-stay-btn').focus();
         trapFocus(modal);
     }
 
@@ -2529,135 +2580,264 @@
 // -------------------------------------------------------------------------
 // Elementor Inline Sidebar Panel Integration (Panel v1 + v2 compatible)
 // -------------------------------------------------------------------------
-function initElementorSidebarPanel() {
-    const isElementorEditor = () =>
-        document.body.classList.contains('elementor-editor-active') ||
-        !!document.getElementById('elementor-editor-wrapper');
-    if (!isElementorEditor()) return;
-
-    // Unwraps Elementor 4's Atomic prop-type envelopes, e.g.
-    // { $$type: 'image', value: { src: { $$type: 'image-src', value: { id: { $$type: 'image-attachment-id', value: 162 } } } } }
-    // Walks down through nested { $$type, value } layers looking for a plain number/string at `key`.
-    function unwrapAtomicValue(node, key) {
-        if (!node || typeof node !== 'object') return null;
-        if (key in node && node[key] !== undefined) {
-            const v = node[key];
-            if (v && typeof v === 'object' && 'value' in v) return unwrapAtomicValue(v, 'value');
-            return v;
-        }
-        if ('value' in node) return unwrapAtomicValue(node.value, key);
-        return null;
-    }
-
-        function resolveAttachmentId(imageSetting) {
-        if (!imageSetting) return null;
-        if (typeof imageSetting !== 'object') return imageSetting;
-        if (imageSetting.id || imageSetting.attachment_id) return imageSetting.id || imageSetting.attachment_id;
-        const src = imageSetting.value?.src;
-        const id = src?.value?.id;
-        if (id && typeof id === 'object' && 'value' in id) return id.value;
-        return unwrapAtomicValue(imageSetting, 'id');
-    }
-
-    function getVisibleElementorPanel() {
-        // Modern React/MUI panel (v2) — prefer this if present and visible.
-        const muiPanel = document.querySelector('.MuiDrawer-paper');
-        if (muiPanel && !muiPanel.closest('[hidden], [inert]')) return muiPanel;
-
-        // Legacy classic panel — only valid if it's not the dormant v2 shell.
-        const legacyPanel = document.getElementById('elementor-panel-content-wrapper');
-        if (legacyPanel && !legacyPanel.closest('[hidden], [inert]')) return legacyPanel;
-
-        const fallback = document.getElementById('elementor-panel');
-        if (fallback && !fallback.closest('[hidden], [inert]')) return fallback;
-
-        return null; // nothing visible to inject into right now
-    }
-
-    // Atomic/MUI panel has no legacy `.elementor-control-*` classes.
-    // Anchor to the semantic "Image" field label instead — stable across
-    // Elementor versions, unlike the hashed `eui-xxxxx` utility classes.
-    function findAtomicImageControl(panel) {
-        const label = Array.from(panel.querySelectorAll('label'))
-            .find(l => l.textContent.trim() === 'Image');
-        return label?.closest('[data-type="settings-field"]') || null;
-    }
-
-        const panelObserver = new MutationObserver(() => {
-            const panel = getVisibleElementorPanel();
-            if (!panel) return;
-
-            let activeWidget = null;
-        let attachmentId = null;
-
-        try {
-            activeWidget = window.elementor?.selection?.getElements?.()[0] || null;
-            if (!activeWidget) return;
-
-            const settings = activeWidget.model?.get?.('settings');
-            const imageSetting = settings?.get ? settings.get('image') : null;
-            attachmentId = resolveAttachmentId(imageSetting);
-        } catch (e) {
-            console.warn('🦜 POLLY: Could not resolve Elementor widget selection:', e);
-        }
-
-        const existingBox = document.querySelector('.polly-elementor-sidebar-container');
-        if (existingBox) {
-            if (attachmentId && existingBox.dataset.pollyAttachmentId === String(attachmentId)) {
-                return; // already rendered for this image
-            }
-            existingBox.remove();
-        }
-
-        if (!attachmentId) return;
-
-        const targetControl = findAtomicImageControl(panel) || panel.querySelector(
-            '.elementor-control-media-area, .elementor-control-media__preview, .elementor-control-image_size, .elementor-control-media, [data-setting="image_size"]'
-        );
-        if (!targetControl || targetControl.closest('[hidden], [inert]')) return;
-
-        const pollyBox = document.createElement('div');
-        pollyBox.className = 'polly-elementor-sidebar-container elementor-control elementor-label-inline';
-        pollyBox.dataset.pollyAttachmentId = String(attachmentId);
-        pollyBox.style.cssText = 'margin-top: 15px; padding: 12px; background: #f7f7f7; border: 1px solid #dcdcde; border-radius: 4px;';
-
-        const fieldId = 'polly-elementor-sidebar-alt-' + attachmentId;
-        pollyBox.innerHTML = `
-            <div class="polly-list-field-container" data-id="${attachmentId}">
-                <textarea
-                    id="${fieldId}"
-                    class="polly-custom-textarea polly-list-alt-field polly-elementor-field"
-                    placeholder="Please add alternative text for blind and low-vision users"
-                    style="width:100%; min-height:70px; margin-top:6px;"
-                ></textarea>
-            </div>
-        `;
-
-        targetControl.closest('.elementor-control')?.after(pollyBox) || targetControl.after(pollyBox);
-
-        const textarea = pollyBox.querySelector('textarea');
-        if (!textarea) return;
-
-        if (attachmentId && window.wp?.media?.attachment) {
-            const attachment = wp.media.attachment(attachmentId);
-            attachment.fetch().done(() => {
-                textarea.value = attachment.get('alt') || '';
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    function getElementorImageWidgets() {
+        const widgets = [];
+        function walk(collection) {
+            if (!collection || typeof collection.each !== 'function') return;
+            collection.each(model => {
+                const widgetType = model.get('widgetType');
+                if (widgetType === 'image' || widgetType === 'e-image') {
+                    widgets.push(model);
+                }
+                walk(model.get('elements'));
             });
         }
+        walk(window.elementor?.elements);
+        return widgets;
+    }
+    window.pollyDebugElementorWidgets = getElementorImageWidgets; // console test only
 
-        textarea.addEventListener('input', () => {
-            if (activeWidget?.model) {
-                const currentImg = activeWidget.model.get('settings')?.get('image') || {};
-                activeWidget.model.setSetting('image', { ...currentImg, alt: textarea.value });
+    function checkElementorCompliance() {
+        const checks = getElementorImageWidgets().map(model => {
+            const settings = model.get('settings');
+            const imageSetting = settings?.get ? settings.get('image') : null;
+            const attachmentId = resolveElementorAttachmentId(imageSetting);
+            if (!attachmentId || !window.wp?.media?.attachment) return Promise.resolve(null);
+
+            const attachment = wp.media.attachment(attachmentId);
+            return attachment.fetch().then(() => {
+                const alt = (attachment.get('alt') || '').trim();
+                const isDecorative = !!attachment.get('is_decorative');
+                return (!alt && !isDecorative) ? { model, attachmentId } : null;
+            }).catch(() => null);
+        });
+        return Promise.all(checks).then(results => results.filter(Boolean));
+    }
+    window.pollyDebugElementorCompliance = checkElementorCompliance; // console test only
+
+    function initElementorSidebarPanel() {
+        const isElementorEditor = () =>
+            document.body.classList.contains('elementor-editor-active') ||
+            !!document.getElementById('elementor-editor-wrapper');
+        if (!isElementorEditor()) return;
+
+        function getVisibleElementorPanel() {
+            // Modern React/MUI panel (v2) — prefer this if present and visible.
+            const muiPanel = document.querySelector('.MuiDrawer-paper');
+            if (muiPanel && !muiPanel.closest('[hidden], [inert]')) return muiPanel;
+
+            // Legacy classic panel — only valid if it's not the dormant v2 shell.
+            const legacyPanel = document.getElementById('elementor-panel-content-wrapper');
+            if (legacyPanel && !legacyPanel.closest('[hidden], [inert]')) return legacyPanel;
+
+            const fallback = document.getElementById('elementor-panel');
+            if (fallback && !fallback.closest('[hidden], [inert]')) return fallback;
+
+            return null; // nothing visible to inject into right now
+        }
+
+        // Atomic/MUI panel has no legacy `.elementor-control-*` classes.
+        // Anchor to the semantic "Image" field label instead — stable across
+        // Elementor versions, unlike the hashed `eui-xxxxx` utility classes.
+        function findAtomicImageControl(panel) {
+            const label = Array.from(panel.querySelectorAll('label'))
+                .find(l => l.textContent.trim() === 'Image');
+            return label?.closest('[data-type="settings-field"]') || null;
+        }
+
+            const panelObserver = new MutationObserver(() => {
+                const panel = getVisibleElementorPanel();
+                if (!panel) return;
+
+                let activeWidget = null;
+            let attachmentId = null;
+
+            try {
+                activeWidget = window.elementor?.selection?.getElements?.()[0] || null;
+                if (!activeWidget) return;
+
+                const settings = activeWidget.model?.get?.('settings');
+                const imageSetting = settings?.get ? settings.get('image') : null;
+                attachmentId = resolveElementorAttachmentId(imageSetting);
+            } catch (e) {
+                console.warn('🦜 POLLY: Could not resolve Elementor widget selection:', e);
             }
+
+            const existingBox = document.querySelector('.polly-elementor-sidebar-container');
+            if (existingBox) {
+                if (attachmentId && existingBox.dataset.pollyAttachmentId === String(attachmentId)) {
+                    return; // already rendered for this image
+                }
+                existingBox.remove();
+            }
+
+            if (!attachmentId) return;
+
+            const targetControl = findAtomicImageControl(panel) || panel.querySelector(
+                '.elementor-control-media-area, .elementor-control-media__preview, .elementor-control-image_size, .elementor-control-media, [data-setting="image_size"]'
+            );
+            if (!targetControl || targetControl.closest('[hidden], [inert]')) return;
+
+            const pollyBox = document.createElement('div');
+            pollyBox.className = 'polly-elementor-sidebar-container elementor-control elementor-label-inline';
+            pollyBox.dataset.pollyAttachmentId = String(attachmentId);
+            pollyBox.style.cssText = 'margin-top: 15px; padding: 12px; background: #f7f7f7; border: 1px solid #dcdcde; border-radius: 4px;';
+
+            const fieldId = 'polly-elementor-sidebar-alt-' + attachmentId;
+            pollyBox.innerHTML = `
+                <div class="polly-list-field-container" data-id="${attachmentId}">
+                    <textarea
+                        id="${fieldId}"
+                        class="polly-custom-textarea polly-list-alt-field polly-elementor-field"
+                        placeholder="Please add alternative text for blind and low-vision users"
+                        style="width:100%; min-height:70px; margin-top:6px;"
+                    ></textarea>
+                </div>
+            `;
+
+            targetControl.closest('.elementor-control')?.after(pollyBox) || targetControl.after(pollyBox);
+
+            const textarea = pollyBox.querySelector('textarea');
+            if (!textarea) return;
+
+            if (attachmentId && window.wp?.media?.attachment) {
+                const attachment = wp.media.attachment(attachmentId);
+                attachment.fetch().done(() => {
+                    textarea.value = attachment.get('alt') || '';
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            }
+
+            textarea.addEventListener('input', () => {
+                if (activeWidget?.model) {
+                    const currentImg = activeWidget.model.get('settings')?.get('image') || {};
+                    activeWidget.model.setSetting('image', { ...currentImg, alt: textarea.value });
+                }
+            });
+
+            initPolly();
         });
 
-        initPolly();
-    });
-
-    const panelEl = document.getElementById('elementor-panel') || document.body;
-panelObserver.observe(panelEl, { childList: true, subtree: true, attributes: true, characterData: true });}
+        const panelEl = document.getElementById('elementor-panel') || document.body;
+    panelObserver.observe(panelEl, { childList: true, subtree: true, attributes: true, characterData: true });
+}
 
 initElementorSidebarPanel();
+function startElementorWalkthrough(items) {
+    let index = 0;
+
+    function walkNext() {
+        if (index >= items.length) {
+            const notice = document.createElement('div');
+            notice.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#46b450; color:#fff; padding:15px 25px; border-radius:4px; font-weight:bold; z-index:100000; box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+            notice.textContent = '🦜 Splendid! All images processed successfully.';
+            document.body.appendChild(notice);
+            setTimeout(() => notice.remove(), 4000);
+            return;
+        }
+
+        const current = items[index];
+        const modelId = current.model.id || current.model.get?.('id');
+
+        try {
+            const container = current.model.getContainer ? current.model.getContainer() : (window.elementor?.getContainer ? window.elementor.getContainer(modelId) : null);
+            if (container && window.$e?.run) {
+                $e.run('document/elements/select', { container });
+            } else if (window.elementor?.selection) {
+                elementor.selection.set(current.model);
+            }
+        } catch (err) {
+            console.warn('🦜 POLLY: Command selection fallback:', err);
+        }
+
+        const iframeDoc = document.querySelector('#elementor-preview-iframe')?.contentDocument;
+        const widgetEl = iframeDoc?.querySelector(`[data-id="${modelId}"]`);
+        if (widgetEl) {
+            widgetEl.click();
+            widgetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        let retries = 0;
+        const checkContainer = setInterval(() => {
+            const pollyContainer = document.querySelector('.polly-elementor-sidebar-container');
+            retries++;
+
+            if (pollyContainer) {
+                clearInterval(checkContainer);
+                pollyContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                pollyContainer.querySelector('.polly-wizard-step-indicator')?.remove();
+
+                const stepIndicator = document.createElement('div');
+                stepIndicator.className = 'polly-wizard-step-indicator';
+                stepIndicator.style.cssText = 'background:#f0f6fa; border-left:4px solid #2271b1; padding:8px 12px; margin-bottom:10px; font-size:12px; display:flex; justify-content:space-between; align-items:center;';
+                stepIndicator.innerHTML = `
+                    <span><strong>Image ${index + 1} of ${items.length}</strong> needing alt text.</span>
+                    <button type="button" class="button button-small polly-wizard-next-btn">Next Image &rarr;</button>
+                `;
+
+                stepIndicator.querySelector('button').onclick = (e) => {
+                    e.preventDefault();
+                    stepIndicator.remove();
+                    index++;
+                    walkNext();
+                };
+
+                pollyContainer.insertBefore(stepIndicator, pollyContainer.firstChild);
+            } else if (retries > 10) {
+                clearInterval(checkContainer);
+                console.warn('🦜 POLLY: Could not find Polly sidebar container for image', index + 1);
+            }
+        }, 200);
+    }
+
+    walkNext();
+}
+
+function initElementorPublishGuard() {
+    if (!document.body.classList.contains('elementor-editor-active')) return;
+
+    let suppressElementorSaveGuard = false;
+
+    document.addEventListener('click', (e) => {
+        if (suppressElementorSaveGuard) return;
+        // Scope specifically to Elementor's footer saver controls
+        const clickedBtn = e.target.closest('button');
+        if (!clickedBtn) return;
+
+        // Restrict strictly to top header bar and panel footer saver containers
+        const isSaverControl = clickedBtn.closest(
+            '#elementor-top-bar, #elementor-header, #elementor-panel-footer, ' +
+            'header, [role="group"], .MuiButtonGroup-root, .elementor-saver-button'
+        );
+        if (!isSaverControl) return;
+
+        const btnText = clickedBtn.textContent.trim();
+        if (!['Publish', 'Update', 'Save Draft', 'Save'].includes(btnText)) return;
+        const saveBtn = clickedBtn;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        checkElementorCompliance().then(missing => {
+            if (missing.length === 0) {
+                suppressElementorSaveGuard = true;
+                saveBtn.click();
+                setTimeout(() => { suppressElementorSaveGuard = false; }, 1000);
+                return;
+            }
+
+            showGlobalEnforcementModal(missing, () => {
+                // "Publish anyway"
+                suppressElementorSaveGuard = true;
+                saveBtn.click();
+                setTimeout(() => { suppressElementorSaveGuard = false; }, 1000);
+            }, () => {
+                // "Guide me through them" — sequential walkthrough
+                startElementorWalkthrough(missing);
+            });
+        });
+    }, true);
+}
+
+initElementorPublishGuard();
 })(jQuery);
