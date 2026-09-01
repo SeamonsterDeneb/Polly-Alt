@@ -770,7 +770,17 @@
 
         let id = null;
 
-        if (context) {
+        // Strategy 0: Classic Editor — read the actual <img> node TinyMCE
+        // has selected. WordPress tags inserted images with a "wp-image-NNN"
+        // class, where NNN is the real attachment ID — far more reliable
+        // here than anything in the Image Details dialog's own DOM.
+        const selectedNode = window.tinymce?.activeEditor?.selection?.getNode?.();
+        if (selectedNode?.tagName === 'IMG') {
+            const m = selectedNode.className.match(/wp-image-(\d+)/);
+            if (m) id = m[1];
+        }
+
+        if (!id && context) {
             // Strategy 1: edit link href contains post=NNN
             const editLink =
                 context.querySelector('.edit-attachment, .view-attachment') ||
@@ -1176,7 +1186,8 @@
         }
 
         if (!apiSrc) {
-            const containerNode = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details, td, .image-details');
+            const containerNode = field.closest('.embed-media-settings') ||
+                field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details, td');
             let imgEl = containerNode
                 ? containerNode.querySelector('.column-thumbnail img, .pinkynail, .details-image, .thumbnail img, img')
                 : null;

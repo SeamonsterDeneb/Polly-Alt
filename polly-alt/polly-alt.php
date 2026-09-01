@@ -111,25 +111,25 @@ add_action( 'admin_menu', function () {
 function polly_alt_settings_page() {
     ?>
     <div class="wrap polly-settings-wrap">
-        <h1>🦜 Polly Alt Settings</h1>
+        <h1><?php esc_html_e( '🦜 Polly Alt Settings', 'polly-alt' ); ?></h1>
         
         <div class="welcome-panel polly-welcome-panel">
             <div class="welcome-panel-content">
-                <h2>🏴‍☠️ The Captain's Guide to Polly Alt</h2>
+                <h2><?php esc_html_e( '🏴‍☠️ The Captain\'s Guide to Polly Alt', 'polly-alt' ); ?></h2>
                 <p class="about-description polly-welcome-description">
-                    Welcome aboard! Polly Alt helps you write great descriptive alt text while training your crew on accessibility standards. To get the absolute most out of Polly, keep these parameters in mind:
+                    <?php esc_html_e( 'Welcome aboard! Polly Alt helps you write great descriptive alt text while training your crew on accessibility standards. To get the absolute most out of Polly, keep these parameters in mind:', 'polly-alt' ); ?>
                 </p>
                 <div class="polly-welcome-grid">
                     <div>
                         <strong class="polly-welcome-tip-title">📋 <?php esc_html_e( 'Use the Media Library "List View"', 'polly-alt' ); ?></strong>
                         <p class="polly-welcome-tip-text">
-                            Polly anchors directly to WordPress text fields. In the main Media Library, **you must switch from Thumbnail Grid to List View** to see the custom Alt Text column and generation buttons.
+                            <?php esc_html_e( 'Polly anchors directly to WordPress text fields. In the main Media Library, you must switch from Thumbnail Grid to List View to see the custom Alt Text column and generation buttons.', 'polly-alt' ); ?>
                         </p>
                     </div>
                     <div>
                         <strong class="polly-welcome-tip-title">✍️ <?php esc_html_e( 'The 125-Character Budget', 'polly-alt' ); ?></strong>
                         <p class="polly-welcome-tip-text">
-                            Screen readers typically announce image descriptions in chunks. Polly optimizes suggestions to stay close to this ideal budget. Avoid starting with repetitive phrases like "image of" or "photo of."
+                            <?php esc_html_e( 'Screen readers typically announce image descriptions in chunks. Polly optimizes suggestions to stay close to this ideal budget. Avoid starting with repetitive phrases like "image of" or "photo of."', 'polly-alt' ); ?>
                         </p>
                     </div>
                 </div>
@@ -137,13 +137,13 @@ function polly_alt_settings_page() {
                     <div>
                         <strong class="polly-welcome-tip-title">🪵 <?php esc_html_e( 'Core Editor Compatibility', 'polly-alt' ); ?></strong>
                         <p class="polly-welcome-tip-text">
-                            Polly tracks your context inside the **Gutenberg Block Editor** sidebar and **Elementor Media Insert screen** seamlessly. Just click an image block to trigger Polly's interface.
+                            <?php esc_html_e( 'Polly tracks your context inside the Gutenberg Block Editor sidebar and Elementor Media Insert screen seamlessly. Just click an image block to trigger Polly\'s interface.', 'polly-alt' ); ?>
                         </p>
                     </div>
                     <div>
                         <strong class="polly-welcome-tip-title">🛡️ <?php esc_html_e( 'Intentional Friction', 'polly-alt' ); ?></strong>
                         <p class="polly-welcome-tip-text">
-                            The compliance guards will deliberately check your work when uploading files or exiting. It's meant to make adding alt text easier than leaving it empty!
+                            <?php esc_html_e( 'The compliance guards will deliberately check your work when uploading files or exiting. It\'s meant to make adding alt text easier than leaving it empty!', 'polly-alt' ); ?>
                         </p>
                     </div>
                 </div>
@@ -435,7 +435,7 @@ function polly_alt_enqueue_assets() {
     wp_enqueue_script(
         'polly-alt-script',
         $base_url . 'assets/polly-alt.js',
-        [ 'media-editor' ],
+        [ 'jquery', 'media-editor' ],
         POLLY_ALT_VERSION,
         true
     );
