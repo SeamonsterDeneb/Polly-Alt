@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.1
+ * Polly Alt AI - Logic v1.2
 **/
 (function () {
 
