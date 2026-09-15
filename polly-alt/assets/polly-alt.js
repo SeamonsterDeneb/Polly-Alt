@@ -1488,7 +1488,42 @@
             modal.remove();
             if (trigger) trigger.focus();
         }
+        // After an alt text is saved, either close the modal (nothing left to
+        // do) or keep it open and offer to jump straight into the next image
+        // still missing alt text — no need to go hunting in the grid.
+        function offerNextOrClose() {
+            const remaining = checkCompliance();
+            if (remaining.length === 0) {
+                dismiss();
+                return;
+            }
 
+            const nextField = remaining[0];
+            headerEl.textContent = '🦜 Alt Text Saved';
+            body.innerHTML = `
+                <div style="text-align:center; padding:15px 10px;">
+                    <p style="font-size:14px; font-weight:600; color:#2271b1; margin-bottom:18px;">
+                        ${remaining.length} image${remaining.length > 1 ? 's' : ''} still missing alternative text.
+                    </p>
+                    <div style="display:flex; justify-content:center; gap:10px;">
+                        <button type="button" class="button button-primary polly-next-image-btn" style="height:40px; padding:0 18px; font-size:14px;">
+                            Next Image &rarr;
+                        </button>
+                        <button type="button" class="button polly-close-later-btn" style="height:40px; padding:0 14px;">
+                            Close and add missing alt later
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            body.querySelector('.polly-next-image-btn').onclick = () => {
+                const nextId = resolveAttachmentId(nextField);
+                nextField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                triggerGeneration(nextField, nextId);
+            };
+            body.querySelector('.polly-close-later-btn').onclick = dismiss;
+            body.querySelector('.polly-next-image-btn').focus({ focusVisible: true });
+        }
         modal.addEventListener('polly-close', dismiss);
         overlay.onclick = dismiss;
 
@@ -1665,14 +1700,7 @@
                         field.dispatchEvent(new Event('input', { bubbles: true }));
                         if (onSelect) onSelect(finalVal);
                         
-                        // Smart journey tracking: find the wizard "Next Image" button if it exists
-                        const wizardNextBtn = document.querySelector('.polly-wizard-step-indicator button');
-                        if (wizardNextBtn) {
-                            dismiss();
-                            setTimeout(() => wizardNextBtn.focus(), 50);
-                        } else {
-                            dismiss();
-                        }
+                        offerNextOrClose();
                     };
 
                     editBtn.onclick = (e) => {
@@ -1726,7 +1754,7 @@
 
                         const id = resolveAttachmentId(field);
                         if (id) saveAltText(id, '');
-                        dismiss();
+                        offerNextOrClose();
                     }
                 });
 
