@@ -939,3 +939,32 @@ textarea[data-setting="alt"],
 .polly-alt-model-select {
     min-width: 250px;
 }
+
+/* =============================================================================
+   Instance Context Selector in Modal
+   ============================================================================= */
+
+.polly-usage-selector-wrap {
+    margin-bottom: 15px;
+    padding: 10px 14px;
+    background: #f0f6fc;
+    border-left: 4px solid #2271b1;
+    border-radius: 4px;
+}
+
+.polly-usage-selector-wrap label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1d2327;
+    margin-bottom: 6px;
+}
+
+.polly-usage-select {
+    width: 100%;
+    max-width: 100%;
+    font-size: 13px;
+    padding: 6px 8px;
+    border-color: #8c8f94;
+    border-radius: 4px;
+}

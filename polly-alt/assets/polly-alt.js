@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.0.0
+ * Polly Alt AI - Logic v1.1.0
 **/
 (function () {
 
@@ -1154,12 +1154,42 @@
     }
 
     async function triggerGeneration(field, attachmentId, pageContext = null) {
-        const btn = document.querySelector(`.polly-gen-btn[data-for="${field.id}"]`);
-        const originalLabel = btn.textContent;
-        btn.textContent = 'Thinking…';
-        btn.disabled = true;
+        const btn = document.querySelector(`.polly-gen-btn[data-for="{field.id}"]`);
+        const originalLabel = btn ? btn.textContent : 'Preview and Generate';
+        if (btn) {
+            btn.textContent = 'Thinking…';
+            btn.disabled = true;
+        }
 
         const original = field.value.trim();
+
+        // 1. If in Media Library and no active editor context was passed, discover usages on the server
+        let activeContext = pageContext;
+        let selectedUsageTarget = null;
+        let availableUsages = [];
+
+        if (!activeContext && attachmentId) {
+            try {
+                const usagesForm = new FormData();
+                usagesForm.append('action', 'polly_get_usages');
+                usagesForm.append('nonce', config.nonce);
+                usagesForm.append('attachment_id', attachmentId);
+
+                const usageResp = await fetch(config.ajaxUrl, { method: 'POST', body: usagesForm });
+                const usageData = await usageResp.json();
+                if (usageData.success && usageData.data?.usages?.length) {
+                    availableUsages = usageData.data.usages;
+                    // Default to the first found instance context
+                    selectedUsageTarget = availableUsages<sup style="color:var(--brass-bright);"><a href="#ref-m55-0" class="footnote-ref" data-ref="0">0</a></sup>;
+                    activeContext = {
+                        paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
+                        paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
+                    };
+                }
+            } catch (err) {
+                console.warn('🦜 POLLY: Could not retrieve server-side usages:', err);
+            }
+        }
 
         // Try Backbone model first — most reliable in media modal contexts
         let apiSrc = null;
@@ -1294,9 +1324,23 @@
             }));
 
             modalCtl.populate(choices, field, original, (selectedText) => {
+                if (selectedUsageTarget) {
+                    // Save specifically to Gutenberg block or Elementor widget
+                    const instanceForm = new FormData();
+                    instanceForm.append('action', 'polly_save_instance_alt');
+                    instanceForm.append('nonce', config.nonce);
+                    instanceForm.append('post_id', selectedUsageTarget.post_id);
+                    instanceForm.append('attachment_id', attachmentId);
+                    instanceForm.append('type', selectedUsageTarget.type);
+                    instanceForm.append('instance_id', selectedUsageTarget.instance_id);
+                    instanceForm.append('alt_text', selectedText);
+                    fetch(config.ajaxUrl, { method: 'POST', body: instanceForm });
+                }
+
                 if (attachmentId) saveAltText(attachmentId, selectedText);
                 updateCharCounter(field);
                 updateButtonLabel(field);
+
 
                 if (config.removeTitle) {
                     const container = field.closest(
