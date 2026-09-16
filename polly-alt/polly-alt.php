@@ -402,271 +402,8 @@ add_action( 'wp_ajax_polly_save_alt', function () {
 } );
 
 // =============================================================================
-// 3.5. Instance Context Discovery & Rewriting (Gutenberg & Elementor)
+// 4. Enqueue Assets
 // =============================================================================
-
-/**
- * Scan database for posts/pages using this attachment in Gutenberg or Elementor.
- */
-function polly_alt_find_attachment_usages( attachment_id ) {
-    global wpdb;
-    attachment_id = absint( attachment_id );
-    if ( ! attachment_id ) return [];
-
-    usages = [];
-
-    // 1. Scan Gutenberg Content
-    escaped_id = wpdb->esc_like( (string) attachment_id );
-    gutenberg_query = wpdb->prepare(
-        "SELECT ID, post_title, post_type, post_content FROM {wpdb->posts}
-         WHERE post_status NOT IN ('trash', 'auto-draft', 'inherit')
-           AND post_type NOT IN ('revision', 'attachment')
-           AND (post_content LIKE %s OR post_content LIKE %s)
-         LIMIT 20",
-        '%"id":' . escaped_id . '%',
-        '%wp-image-' . escaped_id . '%'
-    );
-    gutenberg_posts = wpdb->get_results( gutenberg_query );
-
-    foreach ( gutenberg_posts as p ) {
-        blocks = parse_blocks( p->post_content );
-        extracted = polly_alt_extract_gutenberg_instances( blocks, attachment_id );
-        foreach ( extracted as item ) {
-            usages[] = [
-                'type'             => 'gutenberg',
-                'post_id'          => p->ID,
-                'post_title'       => p->post_title ?: '(No Title #' . p->ID . ')',
-                'instance_id'      => item['client_id'] ?: item['block_index'],
-                'current_alt'      => item['alt'],
-                'paragraphsBefore' => item['before'],
-                'paragraphsAfter'  => item['after'],
-                'label'            => sprintf( '%s (Gutenberg: %s)', p->post_title ?: 'Post #' . p->ID, item['summary'] ),
-            ];
-        }
-    }
-
-    // 2. Scan Elementor Data
-    elementor_query = wpdb->prepare(
-        "SELECT pm.post_id, p.post_title, pm.meta_value 
-         FROM {wpdb->postmeta} pm
-         INNER JOIN {wpdb->posts} p ON p.ID = pm.post_id
-         WHERE pm.meta_key = '_elementor_data'
-           AND p.post_status NOT IN ('trash', 'auto-draft', 'inherit')
-           AND pm.meta_value LIKE %s
-         LIMIT 20",
-        '%"id":' . escaped_id . '%'
-    );
-    elementor_posts = wpdb->get_results( elementor_query );
-
-    foreach ( elementor_posts as ep ) {
-        elements = json_decode( ep->meta_value, true );
-        if ( ! is_array( elements ) ) continue;
-
-        extracted = polly_alt_extract_elementor_instances( elements, attachment_id );
-        foreach ( extracted as item ) {
-            usages[] = [
-                'type'             => 'elementor',
-                'post_id'          => ep->post_id,
-                'post_title'       => ep->post_title ?: '(No Title #' . ep->post_id . ')',
-                'instance_id'      => item['widget_id'],
-                'current_alt'      => item['alt'],
-                'paragraphsBefore' => item['before'],
-                'paragraphsAfter'  => item['after'],
-                'label'            => sprintf( '%s (Elementor Widget %s)', ep->post_title ?: 'Post #' . ep->post_id, substr( item['widget_id'], 0, 7 ) ),
-            ];
-        }
-    }
-
-    return usages;
-}
-
-function polly_alt_extract_gutenberg_instances( blocks, attachment_id, parent_before = '', parent_after = '' ) {
-    results = [];
-    text_blocks = [ 'core/paragraph', 'core/heading', 'core/quote', 'core/list' ];
-
-    foreach ( blocks as index => block ) {
-        if ( ! empty( block['innerBlocks'] ) ) {
-            sub = polly_alt_extract_gutenberg_instances( block['innerBlocks'], attachment_id );
-            results = array_merge( results, sub );
-        }
-
-        if ( 'core/image' === block['blockName'] ) {
-            block_id = block['attrs']['id'] ?? 0;
-            if ( (int) block_id !== (int) attachment_id ) {
-                if ( ! preg_match( '/wp-image-' . attachment_id . '\b/', block['attrs']['className'] ?? '' ) &&
-                     ! preg_match( '/wp-image-' . attachment_id . '\b/', block['innerHTML'] ?? '' ) ) {
-                    continue;
-                }
-            }
-
-            // Find surrounding text
-            before_texts = [];
-            for ( b = max( 0, index - 2 ); b < index; b++ ) {
-                if ( in_array( blocks[b]['blockName'] ?? '', text_blocks, true ) ) {
-                    txt = trim( wp_strip_all_tags( render_block( blocks[b] ) ) );
-                    if ( strlen( txt ) > 15 ) before_texts[] = txt;
-                }
-            }
-
-            after_texts = [];
-            for ( a = index + 1; a <= min( count( blocks ) - 1, index + 2 ); a++ ) {
-                if ( in_array( blocks[a]['blockName'] ?? '', text_blocks, true ) ) {
-                    txt = trim( wp_strip_all_tags( render_block( blocks[a] ) ) );
-                    if ( strlen( txt ) > 15 ) after_texts[] = txt;
-                }
-            }
-
-            results[] = [
-                'client_id'   => block['attrs']['clientId'] ?? '',
-                'block_index' => (string) index,
-                'alt'         => block['attrs']['alt'] ?? '',
-                'before'      => implode( "\n\n", before_texts ),
-                'after'       => implode( "\n\n", after_texts ),
-                'summary'     => ! empty( block['attrs']['alt'] ) ? 'Alt: "' . wp_trim_words( block['attrs']['alt'], 4 ) . '"' : 'No Alt',
-            ];
-        }
-    }
-    return results;
-}
-
-function polly_alt_extract_elementor_instances( elements, attachment_id, &accumulated_texts = [] ) {
-    results = [];
-
-    foreach ( elements as index => el ) {
-        widget_type = el['widgetType'] ?? '';
-        
-        // Extract text widgets for context
-        if ( in_array( widget_type, [ 'heading', 'text-editor' ], true ) ) {
-            t = el['settings']['editor'] ?? el['settings']['title'] ?? '';
-            t = trim( wp_strip_all_tags( t ) );
-            if ( strlen( t ) > 15 ) {
-                accumulated_texts[] = t;
-            }
-        }
-
-        if ( ( 'image' === widget_type || 'e-image' === widget_type ) && ! empty( el['settings']['image'] ) ) {
-            img_setting = el['settings']['image'];
-            img_id = is_array( img_setting ) ? ( img_setting['id'] ?? 0 ) : 0;
-            
-            if ( (int) img_id === (int) attachment_id ) {
-                results[] = [
-                    'widget_id' => el['id'] ?? (string) index,
-                    'alt'       => img_setting['alt'] ?? '',
-                    'before'    => implode( "\n\n", array_slice( accumulated_texts, -2 ) ),
-                    'after'     => '',
-                ];
-            }
-        }
-
-        if ( ! empty( el['elements'] ) && is_array( el['elements'] ) ) {
-            child_results = polly_alt_extract_elementor_instances( el['elements'], attachment_id, accumulated_texts );
-            results = array_merge( results, child_results );
-        }
-    }
-
-    return results;
-}
-
-add_action( 'wp_ajax_polly_get_usages', function () {
-    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
-        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
-    }
-    if ( ! current_user_can( 'upload_files' ) ) {
-        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
-    }
-
-    attachment_id = absint( _POST['attachment_id'] ?? 0 );
-    if ( ! attachment_id ) {
-        wp_send_json_error( [ 'message' => 'Invalid attachment ID.' ], 400 );
-    }
-
-    usages = polly_alt_find_attachment_usages( attachment_id );
-    wp_send_json_success( [ 'usages' => usages ] );
-} );
-
-add_action( 'wp_ajax_polly_save_instance_alt', function () {
-    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
-        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
-    }
-    if ( ! current_user_can( 'edit_posts' ) ) {
-        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
-    }
-
-    post_id       = absint( _POST['post_id'] ?? 0 );
-    attachment_id = absint( _POST['attachment_id'] ?? 0 );
-    type          = sanitize_text_field( wp_unslash( _POST['type'] ?? '' ) );
-    instance_id   = sanitize_text_field( wp_unslash( _POST['instance_id'] ?? '' ) );
-    alt_text      = sanitize_text_field( wp_unslash( _POST['alt_text'] ?? '' ) );
-
-    if ( ! post_id || ! attachment_id ) {
-        wp_send_json_error( [ 'message' => 'Missing required parameters.' ], 400 );
-    }
-
-    if ( 'gutenberg' === type ) {
-        post = get_post( post_id );
-        if ( ! post ) wp_send_json_error( [ 'message' => 'Post not found.' ], 404 );
-
-        blocks = parse_blocks( post->post_content );
-        updated = false;
-
-        mutate_blocks = function( &block_list ) use ( &mutate_blocks, attachment_id, alt_text, &updated ) {
-            foreach ( block_list as &b ) {
-                if ( 'core/image' === b['blockName'] ) {
-                    b_id = b['attrs']['id'] ?? 0;
-                    if ( (int) b_id === (int) attachment_id ) {
-                        b['attrs']['alt'] = alt_text;
-                        updated = true;
-                    }
-                }
-                if ( ! empty( b['innerBlocks'] ) ) {
-                    mutate_blocks( b['innerBlocks'] );
-                }
-            }
-        };
-
-        mutate_blocks( blocks );
-
-        if ( updated ) {
-            wp_update_post( [
-                'ID'           => post_id,
-                'post_content' => serialize_blocks( blocks ),
-            ] );
-        }
-        wp_send_json_success( [ 'updated' => updated ] );
-    } elseif ( 'elementor' === type ) {
-        raw_data = get_post_meta( post_id, '_elementor_data', true );
-        elements = json_decode( raw_data, true );
-        if ( ! is_array( elements ) ) wp_send_json_error( [ 'message' => 'Invalid Elementor data.' ], 400 );
-
-        updated = false;
-        mutate_elementor = function( &el_list ) use ( &mutate_elementor, instance_id, attachment_id, alt_text, &updated ) {
-            foreach ( el_list as &el ) {
-                if ( ( el['id'] ?? '' ) === instance_id || ( ( 'image' === ( el['widgetType'] ?? '' ) ) && (int)( el['settings']['image']['id'] ?? 0 ) === (int)attachment_id ) ) {
-                    if ( isset( el['settings']['image'] ) ) {
-                        el['settings']['image']['alt'] = alt_text;
-                        updated = true;
-                    }
-                }
-                if ( ! empty( el['elements'] ) && is_array( el['elements'] ) ) {
-                    mutate_elementor( el['elements'] );
-                }
-            }
-        };
-
-        mutate_elementor( elements );
-
-        if ( updated ) {
-            update_post_meta( post_id, '_elementor_data', wp_slash( wp_json_encode( elements ) ) );
-            if ( class_exists( '\Elementor\Plugin' ) ) {
-                \Elementor\Plugin::instance->files_manager->clear_cache();
-            }
-        }
-        wp_send_json_success( [ 'updated' => updated ] );
-    }
-
-    wp_send_json_error( [ 'message' => 'Unsupported target type.' ], 400 );
-} );
-
 
 add_action( 'admin_enqueue_scripts', function ( $hook ) {
     $screen = get_current_screen();
@@ -787,6 +524,411 @@ add_action('wp_ajax_polly_gemini_proxy', function() {
 
     wp_send_json_success($data);
 });
+
+// =============================================================================
+// 6. Multi-Instance Discovery & Save
+// =============================================================================
+
+/**
+ * Recursively flatten nested Gutenberg blocks (columns, groups, etc.) into a single
+ * ordered list, preserving document order. Paragraph/heading blocks carry their
+ * plain-text content so we can find nearby context for any image block.
+ */
+function polly_flatten_blocks( $blocks ) {
+    $flat = [];
+
+    foreach ( $blocks as $block ) {
+        if ( ! empty( $block['blockName'] ) ) {
+            $text = '';
+            if ( in_array( $block['blockName'], [ 'core/paragraph', 'core/heading' ], true ) ) {
+                $text = trim( wp_strip_all_tags( $block['innerHTML'] ?? '' ) );
+            }
+
+            $flat[] = [
+                'blockName' => $block['blockName'],
+                'attrs'     => $block['attrs'] ?? [],
+                'text'      => $text,
+            ];
+        }
+
+        if ( ! empty( $block['innerBlocks'] ) ) {
+            $flat = array_merge( $flat, polly_flatten_blocks( $block['innerBlocks'] ) );
+        }
+    }
+
+    return $flat;
+}
+
+/**
+ * Walk a flattened block list away from $index in $direction (-1 or 1) and return
+ * the first paragraph/heading text found, or '' if the post runs out.
+ */
+function polly_nearest_text( $flat, $index, $direction ) {
+    $i = $index + $direction;
+    while ( isset( $flat[ $i ] ) ) {
+        if ( '' !== $flat[ $i ]['text'] ) {
+            return $flat[ $i ]['text'];
+        }
+        $i += $direction;
+    }
+    return '';
+}
+
+/**
+ * Phase 1 (indexless) scan: find Gutenberg image blocks referencing this attachment
+ * across all posts, pulling the nearest paragraph/heading text on either side.
+ *
+ * instance_id is the Nth occurrence of THIS attachment within the post (not a raw
+ * block index), so it stays valid even if unrelated content changes between the
+ * scan and the eventual save.
+ *
+ * @param int $attachment_id
+ * @return array Usage rows: { post_id, post_title, type, instance_id, current_alt, paragraphsBefore, paragraphsAfter }
+ */
+function polly_scan_gutenberg_usages( $attachment_id ) {
+    global $wpdb;
+
+    $like_class = '%wp-image-' . (int) $attachment_id . '%';
+    $like_id    = '%"id":' . (int) $attachment_id . ',%';
+
+    $posts = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT ID, post_title, post_content FROM {$wpdb->posts}
+             WHERE post_status NOT IN ('trash', 'auto-draft')
+             AND post_type NOT IN ('revision', 'attachment')
+             AND (post_content LIKE %s OR post_content LIKE %s)",
+            $like_class,
+            $like_id
+        )
+    );
+
+    $usages = [];
+
+    foreach ( $posts as $post ) {
+        $flat       = polly_flatten_blocks( parse_blocks( $post->post_content ) );
+        $occurrence = 0;
+
+        foreach ( $flat as $index => $block ) {
+            if ( 'core/image' !== $block['blockName'] ) {
+                continue;
+            }
+            if ( (int) ( $block['attrs']['id'] ?? 0 ) !== (int) $attachment_id ) {
+                continue;
+            }
+
+            $usages[] = [
+                'post_id'          => $post->ID,
+                'post_title'       => html_entity_decode( $post->post_title, ENT_QUOTES, 'UTF-8' ),
+                'type'             => 'gutenberg',
+                'instance_id'      => (string) $occurrence,
+                'current_alt'      => $block['attrs']['alt'] ?? '',
+                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
+                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+            ];
+            $occurrence++;
+        }
+    }
+
+    return $usages;
+}
+
+/**
+ * Recursively flatten Elementor's nested element tree (sections/columns/containers)
+ * into a single ordered list, preserving document order. Heading/text-editor widgets
+ * carry plain-text content for nearby-context lookups.
+ */
+function polly_flatten_elementor_elements( $elements ) {
+    $flat = [];
+
+    foreach ( (array) $elements as $element ) {
+        $widget_type = $element['widgetType'] ?? '';
+        $settings    = $element['settings'] ?? [];
+
+        $text = '';
+        if ( 'heading' === $widget_type ) {
+            $text = trim( wp_strip_all_tags( $settings['title'] ?? '' ) );
+        } elseif ( 'text-editor' === $widget_type ) {
+            $text = trim( wp_strip_all_tags( $settings['editor'] ?? '' ) );
+        }
+
+        $flat[] = [
+            'widgetType' => $widget_type,
+            'settings'   => $settings,
+            'text'       => $text,
+        ];
+
+        if ( ! empty( $element['elements'] ) ) {
+            $flat = array_merge( $flat, polly_flatten_elementor_elements( $element['elements'] ) );
+        }
+    }
+
+    return $flat;
+}
+
+/**
+ * Phase 1 (indexless) scan: find Elementor image widgets referencing this attachment
+ * across all posts, pulling the nearest heading/text-editor content on either side.
+ * instance_id uses the same "Nth occurrence of this attachment" scheme as the
+ * Gutenberg scan, so it survives unrelated edits between scan and save.
+ *
+ * @return array Usage rows: { post_id, post_title, type, instance_id, current_alt, paragraphsBefore, paragraphsAfter }
+ */
+function polly_scan_elementor_usages( $attachment_id ) {
+    global $wpdb;
+
+    $like_id = '%"id":' . (int) $attachment_id . '%';
+
+    $post_ids = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT pm.post_id FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = '_elementor_data'
+             AND pm.meta_value LIKE %s
+             AND p.post_status NOT IN ( 'trash', 'auto-draft', 'inherit' )
+             AND p.post_type NOT IN ( 'revision', 'attachment' )",
+            $like_id
+        )
+    );
+
+    $usages = [];
+
+    foreach ( $post_ids as $post_id ) {
+        $raw  = get_post_meta( $post_id, '_elementor_data', true );
+        $data = json_decode( $raw, true );
+        if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $data ) ) {
+            continue;
+        }
+
+        $flat       = polly_flatten_elementor_elements( $data );
+        $occurrence = 0;
+
+        foreach ( $flat as $index => $element ) {
+            if ( 'image' !== $element['widgetType'] ) {
+                continue;
+            }
+            if ( (int) ( $element['settings']['image']['id'] ?? 0 ) !== (int) $attachment_id ) {
+                continue;
+            }
+
+            $usages[] = [
+                'post_id'          => $post_id,
+                'post_title'       => html_entity_decode( get_the_title( $post_id ), ENT_QUOTES, 'UTF-8' ),
+                'type'             => 'elementor',
+                'instance_id'      => (string) $occurrence,
+                'current_alt'      => $element['settings']['image']['alt'] ?? '',
+                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
+                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+            ];
+            $occurrence++;
+        }
+    }
+
+    return $usages;
+}
+
+add_action( 'wp_ajax_polly_get_usages', function () {
+    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
+    }
+    if ( ! current_user_can( 'upload_files' ) ) {
+        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
+    }
+
+    $attachment_id = absint( $_POST['attachment_id'] ?? 0 );
+    if ( $attachment_id <= 0 || 'attachment' !== get_post_type( $attachment_id ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid attachment ID.' ], 400 );
+    }
+
+    $cache_key = 'polly_usages_' . $attachment_id;
+    $usages    = get_transient( $cache_key );
+
+    if ( false === $usages ) {
+        $usages = array_merge(
+            polly_scan_gutenberg_usages( $attachment_id ),
+            class_exists( '\Elementor\Plugin' ) ? polly_scan_elementor_usages( $attachment_id ) : []
+        );
+        set_transient( $cache_key, $usages, HOUR_IN_SECONDS );
+    }
+
+    wp_send_json_success( [ 'usages' => $usages ] );
+} );
+
+// Invalidate every cached usage scan whenever a post is saved — cheap and simple for
+// Phase 1; a future pass could scope this to just the attachment IDs a given post
+// actually references, instead of clearing everything.
+add_action( 'save_post', function ( $post_id ) {
+    if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+        return;
+    }
+
+    global $wpdb;
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_polly_usages_%' OR option_name LIKE '_transient_timeout_polly_usages_%'"
+    );
+} );
+
+/**
+ * Recursive walker that mutates $blocks in place, setting the alt attribute (both
+ * the block attrs AND the rendered <img> markup) on the Nth core/image block
+ * referencing $attachment_id. $counter is passed by reference so the occurrence
+ * count carries across recursive calls into innerBlocks.
+ */
+function polly_set_gutenberg_block_alt( &$blocks, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
+    foreach ( $blocks as &$block ) {
+        if ( 'core/image' === $block['blockName'] && (int) ( $block['attrs']['id'] ?? 0 ) === $attachment_id ) {
+            if ( $counter === $target_occurrence ) {
+                $block['attrs']['alt'] = $alt_text;
+
+                if ( preg_match( '/<img[^>]*>/', $block['innerHTML'], $img_match ) ) {
+                    $img_tag = $img_match[0];
+                    $new_tag = preg_match( '/\salt="[^"]*"/', $img_tag )
+                        ? preg_replace( '/\salt="[^"]*"/', ' alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 )
+                        : preg_replace( '/<img/', '<img alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 );
+
+                    $block['innerHTML'] = substr_replace( $block['innerHTML'], $new_tag, strpos( $block['innerHTML'], $img_tag ), strlen( $img_tag ) );
+                    if ( isset( $block['innerContent'][0] ) ) {
+                        $block['innerContent'][0] = $block['innerHTML'];
+                    }
+                }
+
+                return true;
+            }
+            $counter++;
+        }
+
+        if ( ! empty( $block['innerBlocks'] ) ) {
+            if ( polly_set_gutenberg_block_alt( $block['innerBlocks'], $attachment_id, $target_occurrence, $alt_text, $counter ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Update the alt attribute on the Nth occurrence of $attachment_id within a post's
+ * Gutenberg blocks (occurrence defined the same way as polly_scan_gutenberg_usages),
+ * then reassemble and save the post content.
+ *
+ * @return bool True on success, false if the target block couldn't be located.
+ */
+function polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
+    $post = get_post( $post_id );
+    if ( ! $post ) {
+        return false;
+    }
+
+    $blocks   = parse_blocks( $post->post_content );
+    $counter  = 0;
+    $alt_text = sanitize_text_field( $alt_text );
+    $found    = polly_set_gutenberg_block_alt( $blocks, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
+
+    if ( ! $found ) {
+        return false;
+    }
+
+    wp_update_post( [
+        'ID'           => $post_id,
+        'post_content' => serialize_blocks( $blocks ),
+    ] );
+
+    return true;
+}
+
+/**
+ * Recursive walker mirroring polly_set_gutenberg_block_alt: mutates $elements in
+ * place, setting settings.image.alt on the Nth image widget referencing
+ * $attachment_id, using the same occurrence counting as polly_scan_elementor_usages.
+ */
+function polly_set_elementor_element_alt( &$elements, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
+    foreach ( $elements as &$element ) {
+        if ( 'image' === ( $element['widgetType'] ?? '' )
+            && (int) ( $element['settings']['image']['id'] ?? 0 ) === $attachment_id
+        ) {
+            if ( $counter === $target_occurrence ) {
+                $element['settings']['image']['alt'] = $alt_text;
+                return true;
+            }
+            $counter++;
+        }
+
+        if ( ! empty( $element['elements'] ) ) {
+            if ( polly_set_elementor_element_alt( $element['elements'], $attachment_id, $target_occurrence, $alt_text, $counter ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Update the alt text on the Nth Elementor image widget referencing $attachment_id,
+ * save _elementor_data, and clear Elementor's CSS/file cache so the change shows up
+ * on the front end immediately.
+ *
+ * @return bool True on success, false if the target widget couldn't be located.
+ */
+function polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
+    $raw  = get_post_meta( $post_id, '_elementor_data', true );
+    $data = json_decode( $raw, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $data ) ) {
+        return false;
+    }
+
+    $counter  = 0;
+    $alt_text = sanitize_text_field( $alt_text );
+    $found    = polly_set_elementor_element_alt( $data, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
+
+    if ( ! $found ) {
+        return false;
+    }
+
+    update_post_meta( $post_id, '_elementor_data', wp_json_encode( $data ) );
+
+    if ( class_exists( '\Elementor\Plugin' ) ) {
+        \Elementor\Plugin::$instance->files_manager->clear_cache();
+    }
+
+    return true;
+}
+
+add_action( 'wp_ajax_polly_save_instance_alt', function () {
+    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
+    }
+
+    $post_id       = absint( $_POST['post_id'] ?? 0 );
+    $attachment_id = absint( $_POST['attachment_id'] ?? 0 );
+    $type          = sanitize_text_field( wp_unslash( $_POST['type'] ?? '' ) );
+    $occurrence    = absint( $_POST['instance_id'] ?? 0 );
+    $alt_text      = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
+
+    if ( ! $post_id || ! $attachment_id || ! in_array( $type, [ 'gutenberg', 'elementor' ], true ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid instance save request.' ], 400 );
+    }
+
+    // This writes to a DIFFERENT post's content than the attachment itself, so the
+    // capability check must be against that specific post — upload_files alone
+    // doesn't imply permission to edit arbitrary posts.
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
+    }
+
+    $saved = ( 'gutenberg' === $type )
+        ? polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text )
+        : polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+
+    if ( ! $saved ) {
+        wp_send_json_error( [ 'message' => 'Could not locate that image instance — it may have moved. Try refreshing.' ], 404 );
+    }
+
+    delete_transient( 'polly_usages_' . $attachment_id );
+
+    wp_send_json_success();
+} );
 
 // Display a helpful hint on the Media Library screen if users are on the grid view
 add_action( 'admin_notices', function () {

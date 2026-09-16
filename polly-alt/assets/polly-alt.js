@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.2
+ * Polly Alt AI - Logic v1.2.0
 **/
 (function () {
 
@@ -569,19 +569,13 @@
             if (onStay) {
                 onStay();
             } else {
-                const missing = checkCompliance();
-                if (missing.length > 1) {
-                    startMediaWalkthrough(missing);
-                } else {
-                    const target = focusTarget || document.querySelector('.polly-gen-btn');
-                    if (target) {
-                        target.focus();
-                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                const target = focusTarget || document.querySelector('.polly-gen-btn');
+                if (target) {
+                    target.focus();
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
         };
-
         document.getElementById('polly-leave-btn').onclick = () => {
             if (targetUrl) {
                 window.location.href = targetUrl;
@@ -621,58 +615,6 @@
             trapFocus(modal);
         });
     }
-
-    function startMediaWalkthrough(missingFields) {
-        let index = 0;
-
-        function walkNext() {
-            const activeMissing = missingFields.filter(f => !f.value.trim() && !f.disabled);
-            if (activeMissing.length === 0 || index >= missingFields.length) {
-                document.querySelectorAll('.polly-wizard-step-indicator').forEach(el => el.remove());
-                return;
-            }
-
-            const field = missingFields[index];
-            if (!field || field.value.trim() || field.disabled) {
-                index++;
-                walkNext();
-                return;
-            }
-
-            const container = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details') || field.parentNode;
-            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            document.querySelectorAll('.polly-wizard-step-indicator').forEach(el => el.remove());
-
-            const stepIndicator = document.createElement('div');
-            stepIndicator.className = 'polly-wizard-step-indicator';
-            stepIndicator.style.cssText = 'background:#f0f6fa; border-left:4px solid #2271b1; padding:8px 12px; margin-bottom:10px; font-size:12px; display:flex; justify-content:space-between; align-items:center;';
-            stepIndicator.innerHTML = `
-                <span><strong>Image {index + 1} of {missingFields.length}</strong> needing alt text.</span>
-                <button type="button" class="button button-small polly-wizard-next-btn">Next Image &rarr;</button>
-            `;
-
-            stepIndicator.querySelector('button').onclick = (e) => {
-                e.preventDefault();
-                stepIndicator.remove();
-                index++;
-                walkNext();
-            };
-
-            const targetEl = container.querySelector('.polly-field-header') || container.querySelector('.polly-action-row') || field;
-            targetEl.parentNode.insertBefore(stepIndicator, targetEl);
-
-            const genBtn = container.querySelector('.polly-gen-btn');
-            if (genBtn) {
-                genBtn.focus();
-            } else {
-                field.focus();
-            }
-        }
-
-        walkNext();
-    }
-
     // -------------------------------------------------------------------------
     // Drag and drop completion notification
     // -------------------------------------------------------------------------
@@ -759,15 +701,10 @@
 
         document.getElementById('polly-drop-yes').onclick = () => {
             cleanup();
-            const missing = checkCompliance();
-            if (missing.length > 1) {
-                startMediaWalkthrough(missing);
-            } else {
-                const target = firstBtn || document.querySelector('.polly-gen-btn');
-                if (target) {
-                    target.focus();
-                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
+            const target = firstBtn || document.querySelector('.polly-gen-btn');
+            if (target) {
+                target.focus();
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         };
 
@@ -1217,7 +1154,7 @@
     }
 
     async function triggerGeneration(field, attachmentId, pageContext = null) {
-        const btn = document.querySelector(`.polly-gen-btn[data-for="{field.id}"]`);
+        const btn = document.querySelector(`.polly-gen-btn[data-for="${field.id}"]`);
         const originalLabel = btn ? btn.textContent : 'Preview and Generate';
         if (btn) {
             btn.textContent = 'Thinking…';
@@ -1226,12 +1163,13 @@
 
         const original = field.value.trim();
 
-        // 1. If in Media Library and no active editor context was passed, discover usages on the server
-        let activeContext = pageContext;
+        // 1. If in Media Library and no active editor context was passed, discover
+        // usages on the server — but don't pick one yet. That happens after the
+        // image is resolved, via a picker the user actually gets to choose from.
         let selectedUsageTarget = null;
         let availableUsages = [];
 
-        if (!activeContext && attachmentId) {
+        if (!pageContext && attachmentId) {
             try {
                 const usagesForm = new FormData();
                 usagesForm.append('action', 'polly_get_usages');
@@ -1242,12 +1180,6 @@
                 const usageData = await usageResp.json();
                 if (usageData.success && usageData.data?.usages?.length) {
                     availableUsages = usageData.data.usages;
-                    // Default to the first found instance context
-                    selectedUsageTarget = availableUsages<sup style="color:var(--brass-bright);"><a href="#ref-m55-0" class="footnote-ref" data-ref="0">0</a></sup>;
-                    activeContext = {
-                        paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
-                        paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
-                    };
                 }
             } catch (err) {
                 console.warn('🦜 POLLY: Could not retrieve server-side usages:', err);
@@ -1302,17 +1234,38 @@
             highResSrc = getHighResUrl(imgEl.src);
             apiSrc = imgEl.src;
         }
+
+        // 2. Now that we can show the image, let the user pick which usage (if any)
+        // to tailor this generation for — the choice drives the prompt context below
+        // AND which instance gets saved to, later in modalCtl.populate's callback.
+        let activeContext = pageContext;
+        if (!activeContext && availableUsages.length > 1) {
+            selectedUsageTarget = await promptForUsageInstance(highResSrc, availableUsages, btn);
+            if (selectedUsageTarget) {
+                activeContext = {
+                    paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
+                    paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
+                };
+            }
+        } else if (!activeContext && availableUsages.length === 1) {
+            selectedUsageTarget = availableUsages[0];
+            activeContext = {
+                paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
+                paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
+            };
+        }
+
         // Open the dialog right away — image on top, tips on the bottom —
         // while Polly is still talking to the AI.
-        const modalCtl = showGeneratingModal(highResSrc, btn, pageContext);
+        const modalCtl = showGeneratingModal(highResSrc, btn, activeContext);
         const mimeType = mimeTypeFromUrl(highResSrc);
 
         let contextBlock = '';
-        if (pageContext && (pageContext.paragraphsBefore || pageContext.paragraphsAfter)) {
+        if (activeContext && (activeContext.paragraphsBefore || activeContext.paragraphsAfter)) {
             contextBlock =
                 `SURROUNDING PAGE TEXT:\n` +
-                (pageContext.paragraphsBefore ? `Before the image: "${pageContext.paragraphsBefore}"\n` : '') +
-                (pageContext.paragraphsAfter ? `After the image: "${pageContext.paragraphsAfter}"\n` : '') +
+                (activeContext.paragraphsBefore ? `Before the image: "${activeContext.paragraphsBefore}"\n` : '') +
+                (activeContext.paragraphsAfter ? `After the image: "${activeContext.paragraphsAfter}"\n` : '') +
                 `\nUse this surrounding text to decide which visible details matter most. ` +
                 `Don't just restate a fact the text already gives (a name, a place, a number) — ` +
                 `but let it steer which visual elements you foreground. ` +
@@ -1338,7 +1291,7 @@
             `- "alt": the alt text string (100-125 characters, verified)\n` +
             `- "focus": a short noun phrase naming the visual element foregrounded in this variation (e.g. "orange coffee harvester", "rows of green coffee trees", "hillside coffee farm")\n` +
             `- "explanation": one sentence explaining why a screen reader user might find this framing useful` +
-            (pageContext && (pageContext.paragraphsBefore || pageContext.paragraphsAfter)
+            (activeContext && (activeContext.paragraphsBefore || activeContext.paragraphsAfter)
                 ? ` — for at least one variation, explicitly name how this framing connects to the surrounding page text\n\n`
                 : `\n\n`) +
             `Do not include any text outside the JSON array.`;
@@ -1466,9 +1419,12 @@
             <div class="polly-modal-image-container" tabindex="0" aria-label="Preview of image being described">
                 <img src="${imgSrc}" alt="">
             </div>
-            <div class="polly-modal-header"><h3></h3></div>
+            <div class="polly-modal-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <h3 style="margin:0;"></h3>
+            </div>
             <div class="polly-modal-body"></div>
         `;
+
 
         const imgContainer = modal.querySelector('.polly-modal-image-container');
         const img = imgContainer.querySelector('img');
@@ -1485,6 +1441,70 @@
             body: modal.querySelector('.polly-modal-body'),
             headerEl: modal.querySelector('.polly-modal-header h3'),
         };
+    }
+
+    /**
+     * When Polly discovers multiple places this attachment is used, ask which one to
+     * tailor the generated alt text for before calling the AI — the choice determines
+     * both the prompt context and which instance gets saved to later.
+     * Resolves to the chosen usage object, or null for "Global Default".
+     */
+    function promptForUsageInstance(imgSrc, usages, triggerBtn) {
+        return new Promise((resolve) => {
+            const { overlay, modal, body, headerEl } = buildAltModalShell(imgSrc);
+            modal.setAttribute('aria-label', 'Choose Where This Alt Text Applies');
+            headerEl.textContent = '🦜 Which spot on the ship?';
+
+            body.innerHTML = `
+                <p class="polly-modal-intro">
+                    This image shows up in more than one place. Pick where you'd like this alt text tailored for —
+                    Polly will use that page's surrounding text to steer the AI.
+                </p>
+                <select class="polly-usage-select" aria-label="Where to tailor alt text for"></select>
+                <div class="polly-modal-btn-row" style="margin-top:20px;">
+                    <button type="button" id="polly-usage-continue-btn" class="button button-primary" style="flex:1; height:50px;">Continue</button>
+                </div>
+            `;
+
+            const select = body.querySelector('.polly-usage-select');
+            let selected = null; // null = Global Default
+
+            function addOption(labelText, usage) {
+                const option = document.createElement('option');
+                option.value = usage ? `${usage.type}-${usage.post_id}-${usage.instance_id}` : 'global';
+                option.textContent = labelText;
+                select.appendChild(option);
+            }
+
+            addOption('Global Default (no specific page context)', null);
+            usages.forEach((usage) => {
+                const typeLabel = usage.type === 'elementor' ? 'Elementor Widget' : 'Gutenberg Block';
+                addOption(`${usage.post_title} — ${typeLabel}`, usage);
+            });
+
+            select.onchange = () => {
+                selected = select.value === 'global'
+                    ? null
+                    : usages.find(u => `${u.type}-${u.post_id}-${u.instance_id}` === select.value) || null;
+            };
+
+            const trigger = triggerBtn || document.activeElement;
+            function finish(result) {
+                overlay.remove();
+                modal.remove();
+                if (trigger) trigger.focus();
+                resolve(result);
+            }
+
+            overlay.onclick = () => finish(null);
+            modal.addEventListener('polly-close', () => finish(null));
+            body.querySelector('#polly-usage-continue-btn').onclick = () => finish(selected);
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+            select.focus({ focusVisible: true });
+            trapFocus(modal);
+        });
     }
 
     /**
@@ -1532,42 +1552,7 @@
             modal.remove();
             if (trigger) trigger.focus();
         }
-        // After an alt text is saved, either close the modal (nothing left to
-        // do) or keep it open and offer to jump straight into the next image
-        // still missing alt text — no need to go hunting in the grid.
-        function offerNextOrClose() {
-            const remaining = checkCompliance();
-            if (remaining.length === 0) {
-                dismiss();
-                return;
-            }
 
-            const nextField = remaining[0];
-            headerEl.textContent = '🦜 Alt Text Saved';
-            body.innerHTML = `
-                <div style="text-align:center; padding:15px 10px;">
-                    <p style="font-size:14px; font-weight:600; color:#2271b1; margin-bottom:18px;">
-                        ${remaining.length} image${remaining.length > 1 ? 's' : ''} still missing alternative text.
-                    </p>
-                    <div style="display:flex; justify-content:center; gap:10px;">
-                        <button type="button" class="button button-primary polly-next-image-btn" style="height:40px; padding:0 18px; font-size:14px;">
-                            Next Image &rarr;
-                        </button>
-                        <button type="button" class="button polly-close-later-btn" style="height:40px; padding:0 14px;">
-                            Close and add missing alt later
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            body.querySelector('.polly-next-image-btn').onclick = () => {
-                const nextId = resolveAttachmentId(nextField);
-                nextField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                triggerGeneration(nextField, nextId);
-            };
-            body.querySelector('.polly-close-later-btn').onclick = dismiss;
-            body.querySelector('.polly-next-image-btn').focus({ focusVisible: true });
-        }
         modal.addEventListener('polly-close', dismiss);
         overlay.onclick = dismiss;
 
@@ -1583,11 +1568,86 @@
             modal.focus();
         }
 
-        body.querySelector('#polly-generating-cancel-btn').onclick = dismiss;
+        function advanceToNextMissing(savedText) {
+            if (dismissed) return;
+            clearInterval(tipInterval);
 
-        trapFocus(modal);
+            const remaining = checkCompliance();
+            if (remaining.length === 0) {
+                headerEl.textContent = '🦜 All Done!';
+                modal.querySelector('.polly-modal-next-btn')?.remove();
+                body.innerHTML = `
+                    <div style="text-align:center; padding:20px 10px;">
+                        <p style="font-size:16px; font-weight:600; color:#1e8e3e; margin-bottom:15px;">
+                            ✅ Alt text applied! All images on this page now have descriptions.
+                        </p>
+                        <button type="button" id="polly-done-close-btn" class="button button-primary polly-footer-btn" style="min-width:140px;">Close</button>
+                    </div>
+                `;
+                body.querySelector('#polly-done-close-btn').onclick = dismiss;
+                body.querySelector('#polly-done-close-btn').focus();
+                return;
+            }
+
+            headerEl.textContent = '🦜 Alt Text Saved';
+
+            const header = modal.querySelector('.polly-modal-header');
+            header.querySelector('.polly-modal-next-btn')?.remove();
+
+            const headerNextBtn = document.createElement('button');
+            headerNextBtn.type = 'button';
+            headerNextBtn.className = 'button button-primary button-small polly-modal-next-btn';
+            headerNextBtn.style.cssText = 'margin-left:auto; font-weight:600;';
+            headerNextBtn.innerHTML = `Jump to Next Missing Alt (${remaining.length}) &rarr;`;
+            header.appendChild(headerNextBtn);
+
+            body.innerHTML = `
+                <div style="text-align:center; padding:15px 10px;">
+                    <p style="font-size:15px; margin-bottom:12px; color:#2c3338;">
+                        Saved: <em>"${escapeHtml(savedText)}"</em>
+                    </p>
+                    <p style="font-size:14px; font-weight:600; color:#2271b1; margin-bottom:18px;">
+                        ${remaining.length} image${remaining.length > 1 ? 's' : ''} still missing alternative text.
+                    </p>
+                    <div style="display:flex; justify-content:center; gap:10px;">
+                        <button type="button" id="polly-modal-advance-btn" class="button button-primary" style="height:40px; padding:0 18px; font-size:14px; font-weight:600;">
+                            Jump to Next Missing Alt &rarr;
+                        </button>
+                        <button type="button" id="polly-modal-done-btn" class="button" style="height:40px; padding:0 14px;">
+                            Done for now
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const goToNext = (e) => {
+                if (e) e.preventDefault();
+                const nextRemaining = checkCompliance();
+                if (nextRemaining.length === 0) {
+                    dismiss();
+                    return;
+                }
+                const nextField = nextRemaining[0];
+                const nextContainer = nextField.closest('.polly-list-field-container, .media-item, .setting, .attachment-details, tr');
+                if (nextContainer) {
+                    nextContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                const nextId = resolveAttachmentId(nextField);
+                dismiss();
+                setTimeout(() => {
+                    triggerGeneration(nextField, nextId);
+                }, 100);
+            };
+
+            headerNextBtn.onclick = goToNext;
+            body.querySelector('#polly-modal-advance-btn').onclick = goToNext;
+            body.querySelector('#polly-modal-done-btn').onclick = dismiss;
+
+            body.querySelector('#polly-modal-advance-btn').focus();
+        }
 
         return {
+
             isDismissed: () => dismissed,
 
             showError(message, onRetry) {
@@ -1596,7 +1656,7 @@
                 headerEl.textContent = '🦜 Squawk! Something went sideways.';
                 modal.setAttribute('aria-label', 'Alt Text Generation Error');
                 body.innerHTML = `
-                    <p style="font-size:15px; line-height:1.6;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+                    <p style="font-size:15px; line-height:1.6;">${message.replace(/\n/g, '<br>')}</p>
                     <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
                         <button type="button" id="polly-error-retry-btn" class="button button-primary" style="flex:1; height:50px;">Try Again</button>
                         <button type="button" id="polly-error-close-btn" class="button" style="flex:1; height:50px; color:#666;">Close</button>
@@ -1743,9 +1803,10 @@
                         updateButtonLabel(field);
                         field.dispatchEvent(new Event('input', { bubbles: true }));
                         if (onSelect) onSelect(finalVal);
-                        
-                        offerNextOrClose();
+
+                        advanceToNextMissing(finalVal);
                     };
+
 
                     editBtn.onclick = (e) => {
                         e.stopPropagation();
@@ -1797,8 +1858,8 @@
                         }
 
                         const id = resolveAttachmentId(field);
-                        if (id) saveAltText(id, '');
-                        offerNextOrClose();
+                        if (id) saveAltText(id, '', true);
+                        advanceToNextMissing('Marked as decorative');
                     }
                 });
 
@@ -2577,7 +2638,7 @@
         // Wait brief second for the Backbone frame layout to mount completely
         setTimeout(function() {
             pollyAuditMediaGrid();
-            if (wp.media.frame.state().get('library')) {
+            if (typeof wp !== 'undefined' && wp.media && wp.media.frame && wp.media.frame.state().get('library')) {
                 wp.media.frame.state().get('library').on('add remove reset', pollyAuditMediaGrid);
             }
         }, 500);

@@ -44,8 +44,6 @@ Never. Polly Alt operates on a strict human-in-the-loop review architecture. The
 
 = 1.0.0 =
 * Launching Polly Alt v1.0.0 — Complete integration with Gutenberg and Elementor modalities.
-= 1.2.0 =
-* Add serial remediation modal inside of media library list view
 
 == External services ==
 
