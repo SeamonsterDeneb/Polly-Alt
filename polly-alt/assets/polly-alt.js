@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.1.0
+ * Polly Alt AI - Logic v1.2
 **/
 (function () {
 
@@ -569,13 +569,19 @@
             if (onStay) {
                 onStay();
             } else {
-                const target = focusTarget || document.querySelector('.polly-gen-btn');
-                if (target) {
-                    target.focus();
-                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const missing = checkCompliance();
+                if (missing.length > 1) {
+                    startMediaWalkthrough(missing);
+                } else {
+                    const target = focusTarget || document.querySelector('.polly-gen-btn');
+                    if (target) {
+                        target.focus();
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
             }
         };
+
         document.getElementById('polly-leave-btn').onclick = () => {
             if (targetUrl) {
                 window.location.href = targetUrl;
@@ -615,6 +621,58 @@
             trapFocus(modal);
         });
     }
+
+    function startMediaWalkthrough(missingFields) {
+        let index = 0;
+
+        function walkNext() {
+            const activeMissing = missingFields.filter(f => !f.value.trim() && !f.disabled);
+            if (activeMissing.length === 0 || index >= missingFields.length) {
+                document.querySelectorAll('.polly-wizard-step-indicator').forEach(el => el.remove());
+                return;
+            }
+
+            const field = missingFields[index];
+            if (!field || field.value.trim() || field.disabled) {
+                index++;
+                walkNext();
+                return;
+            }
+
+            const container = field.closest('.polly-list-field-container, .media-item, .setting, .attachment-details') || field.parentNode;
+            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            document.querySelectorAll('.polly-wizard-step-indicator').forEach(el => el.remove());
+
+            const stepIndicator = document.createElement('div');
+            stepIndicator.className = 'polly-wizard-step-indicator';
+            stepIndicator.style.cssText = 'background:#f0f6fa; border-left:4px solid #2271b1; padding:8px 12px; margin-bottom:10px; font-size:12px; display:flex; justify-content:space-between; align-items:center;';
+            stepIndicator.innerHTML = `
+                <span><strong>Image {index + 1} of {missingFields.length}</strong> needing alt text.</span>
+                <button type="button" class="button button-small polly-wizard-next-btn">Next Image &rarr;</button>
+            `;
+
+            stepIndicator.querySelector('button').onclick = (e) => {
+                e.preventDefault();
+                stepIndicator.remove();
+                index++;
+                walkNext();
+            };
+
+            const targetEl = container.querySelector('.polly-field-header') || container.querySelector('.polly-action-row') || field;
+            targetEl.parentNode.insertBefore(stepIndicator, targetEl);
+
+            const genBtn = container.querySelector('.polly-gen-btn');
+            if (genBtn) {
+                genBtn.focus();
+            } else {
+                field.focus();
+            }
+        }
+
+        walkNext();
+    }
+
     // -------------------------------------------------------------------------
     // Drag and drop completion notification
     // -------------------------------------------------------------------------
@@ -701,10 +759,15 @@
 
         document.getElementById('polly-drop-yes').onclick = () => {
             cleanup();
-            const target = firstBtn || document.querySelector('.polly-gen-btn');
-            if (target) {
-                target.focus();
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const missing = checkCompliance();
+            if (missing.length > 1) {
+                startMediaWalkthrough(missing);
+            } else {
+                const target = firstBtn || document.querySelector('.polly-gen-btn');
+                if (target) {
+                    target.focus();
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
         };
 
@@ -1469,7 +1532,42 @@
             modal.remove();
             if (trigger) trigger.focus();
         }
+        // After an alt text is saved, either close the modal (nothing left to
+        // do) or keep it open and offer to jump straight into the next image
+        // still missing alt text — no need to go hunting in the grid.
+        function offerNextOrClose() {
+            const remaining = checkCompliance();
+            if (remaining.length === 0) {
+                dismiss();
+                return;
+            }
 
+            const nextField = remaining[0];
+            headerEl.textContent = '🦜 Alt Text Saved';
+            body.innerHTML = `
+                <div style="text-align:center; padding:15px 10px;">
+                    <p style="font-size:14px; font-weight:600; color:#2271b1; margin-bottom:18px;">
+                        ${remaining.length} image${remaining.length > 1 ? 's' : ''} still missing alternative text.
+                    </p>
+                    <div style="display:flex; justify-content:center; gap:10px;">
+                        <button type="button" class="button button-primary polly-next-image-btn" style="height:40px; padding:0 18px; font-size:14px;">
+                            Next Image &rarr;
+                        </button>
+                        <button type="button" class="button polly-close-later-btn" style="height:40px; padding:0 14px;">
+                            Close and add missing alt later
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            body.querySelector('.polly-next-image-btn').onclick = () => {
+                const nextId = resolveAttachmentId(nextField);
+                nextField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                triggerGeneration(nextField, nextId);
+            };
+            body.querySelector('.polly-close-later-btn').onclick = dismiss;
+            body.querySelector('.polly-next-image-btn').focus({ focusVisible: true });
+        }
         modal.addEventListener('polly-close', dismiss);
         overlay.onclick = dismiss;
 
@@ -1646,14 +1744,7 @@
                         field.dispatchEvent(new Event('input', { bubbles: true }));
                         if (onSelect) onSelect(finalVal);
                         
-                        // Smart journey tracking: find the wizard "Next Image" button if it exists
-                        const wizardNextBtn = document.querySelector('.polly-wizard-step-indicator button');
-                        if (wizardNextBtn) {
-                            dismiss();
-                            setTimeout(() => wizardNextBtn.focus(), 50);
-                        } else {
-                            dismiss();
-                        }
+                        offerNextOrClose();
                     };
 
                     editBtn.onclick = (e) => {
@@ -1707,7 +1798,7 @@
 
                         const id = resolveAttachmentId(field);
                         if (id) saveAltText(id, '');
-                        dismiss();
+                        offerNextOrClose();
                     }
                 });
 
