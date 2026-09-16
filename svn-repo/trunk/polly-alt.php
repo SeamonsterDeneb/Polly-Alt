@@ -1,0 +1,983 @@
+<?php
+/**
+ * Plugin Name: Polly Alt
+ * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
+ * Version: 1.1.3
+ * Author: Captain Accessible, SeaMonster Studios
+ * Author URI: https://www.seamonsterstudios.com
+ * Text Domain: polly-alt
+ * License: GPL v2 or later
+* License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ */
+
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+define( 'POLLY_ALT_VERSION', '1.1.3' );
+define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
+
+// =============================================================================
+// 1. Settings Page & Dynamic Model Fetching
+// =============================================================================
+
+/**
+ * Reach out to Google Gemini to fetch all active multimodal-capable models.
+ * Results are cached for 24 hours to keep the WP admin screen fast.
+ */
+function polly_alt_get_available_models() {
+    $api_key = get_option( 'polly_alt_api_key', '' );
+    if ( empty( $api_key ) ) {
+        return [];
+    }
+
+    $transient_key = 'polly_alt_models_list';
+    $cached = get_transient( $transient_key );
+    if ( false !== $cached ) {
+        return $cached;
+    }
+
+    // Call the v1beta models endpoint to discover what endpoints are currently live
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' . rawurlencode( $api_key );
+    $response = wp_remote_get( $url, [ 'timeout' => 15 ] );
+
+    // Fallback if the network call fails
+    if ( is_wp_error( $response ) ) {
+        return [
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback - API Connection Error)',
+        ];
+    }
+
+    $body = wp_remote_retrieve_body( $response );
+    $data = json_decode( $body, true );
+
+    if ( empty( $data['models'] ) || ! is_array( $data['models'] ) ) {
+        return [
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback - Invalid API Response)',
+        ];
+    }
+
+    $models = [];
+    foreach ( $data['models'] as $m ) {
+        if ( empty( $m['name'] ) || empty( $m['supportedGenerationMethods'] ) ) {
+            continue;
+        }
+
+        // We only want models that support generating content (multimodal images)
+        if ( ! in_array( 'generateContent', $m['supportedGenerationMethods'], true ) ) {
+            continue;
+        }
+
+        $clean_name = str_replace( 'models/', '', $m['name'] );
+
+        // Exclude internal tools, embedding, or text-only legacy API endpoints
+        if ( 
+            strpos( $clean_name, 'embedding' ) !== false || 
+            strpos( $clean_name, 'text' ) !== false || 
+            strpos( $clean_name, 'aqa' ) !== false ||
+            strpos( $clean_name, 'tuning' ) !== false
+        ) {
+            continue;
+        }
+
+        $display_name = ! empty( $m['displayName'] ) ? $m['displayName'] : $clean_name;
+        $models[ $clean_name ] = $display_name;
+    }
+
+    if ( empty( $models ) ) {
+        $models = [
+            'gemini-3.5-flash' => 'Gemini 3.5 Flash (Fallback)',
+        ];
+    }
+
+    // Cache the verified endpoints for 24 hours
+    set_transient( $transient_key, $models, DAY_IN_SECONDS );
+    return $models;
+}
+
+// Automatically clear the model cache if the user updates their API Key
+add_action( 'update_option_polly_alt_api_key', function () {
+    delete_transient( 'polly_alt_models_list' );
+} );
+
+add_action( 'admin_menu', function () {
+    add_options_page(
+        'Polly Alt Settings',
+        'Polly Alt',
+        'manage_options',
+        'polly-alt-settings',
+        'polly_alt_settings_page'
+    );
+} );
+
+function polly_alt_settings_page() {
+    ?>
+    <div class="wrap polly-settings-wrap">
+        <h1><?php esc_html_e( '🦜 Polly Alt Settings', 'polly-alt' ); ?></h1>
+        
+        <div class="welcome-panel polly-welcome-panel">
+            <div class="welcome-panel-content">
+                <h2><?php esc_html_e( '🏴‍☠️ The Captain\'s Guide to Polly Alt', 'polly-alt' ); ?></h2>
+                <p class="about-description polly-welcome-description">
+                    <?php esc_html_e( 'Welcome aboard! Polly Alt helps you write great descriptive alt text while training your crew on accessibility standards. To get the absolute most out of Polly, keep these parameters in mind:', 'polly-alt' ); ?>
+                </p>
+                <div class="polly-welcome-grid">
+                    <div>
+                        <strong class="polly-welcome-tip-title">📋 <?php esc_html_e( 'Use the Media Library "List View"', 'polly-alt' ); ?></strong>
+                        <p class="polly-welcome-tip-text">
+                            <?php esc_html_e( 'Polly anchors directly to WordPress text fields. In the main Media Library, you must switch from Thumbnail Grid to List View to see the custom Alt Text column and generation buttons.', 'polly-alt' ); ?>
+                        </p>
+                    </div>
+                    <div>
+                        <strong class="polly-welcome-tip-title">✍️ <?php esc_html_e( 'The 125-Character Budget', 'polly-alt' ); ?></strong>
+                        <p class="polly-welcome-tip-text">
+                            <?php esc_html_e( 'Screen readers typically announce image descriptions in chunks. Polly optimizes suggestions to stay close to this ideal budget. Avoid starting with repetitive phrases like "image of" or "photo of."', 'polly-alt' ); ?>
+                        </p>
+                    </div>
+                </div>
+                <div class="polly-welcome-grid polly-welcome-grid--divided">
+                    <div>
+                        <strong class="polly-welcome-tip-title">🪵 <?php esc_html_e( 'Core Editor Compatibility', 'polly-alt' ); ?></strong>
+                        <p class="polly-welcome-tip-text">
+                            <?php esc_html_e( 'Polly tracks your context inside the Gutenberg Block Editor sidebar and Elementor Media Insert screen seamlessly. Just click an image block to trigger Polly\'s interface.', 'polly-alt' ); ?>
+                        </p>
+                    </div>
+                    <div>
+                        <strong class="polly-welcome-tip-title">🛡️ <?php esc_html_e( 'Intentional Friction', 'polly-alt' ); ?></strong>
+                        <p class="polly-welcome-tip-text">
+                            <?php esc_html_e( 'The compliance guards will deliberately check your work when uploading files or exiting. It\'s meant to make adding alt text easier than leaving it empty!', 'polly-alt' ); ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" action="options.php" class="polly-settings-form">
+            <?php
+            settings_fields( 'polly_alt_group' );
+            do_settings_sections( 'polly-alt-settings' );
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
+
+add_action( 'admin_init', function () {
+    register_setting( 'polly_alt_group', 'polly_alt_api_key', [
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_model', [
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_choices', [
+        'type'              => 'integer',
+        'sanitize_callback' => 'absint',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_remove_title', [
+        'type'              => 'boolean',
+        'sanitize_callback' => 'rest_sanitize_boolean',
+    ] );
+    register_setting( 'polly_alt_group', 'polly_alt_include_explanation', [
+        'type'              => 'boolean',
+        'sanitize_callback' => 'rest_sanitize_boolean',
+    ] );
+
+    add_settings_section( 'polly_main_section', "Ship's Logs & API", null, 'polly-alt-settings' );
+
+    add_settings_field( 'api_key', 'Gemini API Key', function () {
+        $val = get_option( 'polly_alt_api_key', '' );
+        ?>
+        <input
+            type="password"
+            name="polly_alt_api_key"
+            value="<?php echo esc_attr( $val ); ?>"
+            class="regular-text"
+            autocomplete="off"
+        >
+        <p class="description">
+            Required to generate alt text. Get your free key at
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.
+        </p>
+        <?php
+        
+    }, 'polly-alt-settings', 'polly_main_section' );
+
+    add_settings_field( 'model', 'AI Model', function () {
+        $models = polly_alt_get_available_models();
+
+        // Safe static fallbacks if the API call fails or key is missing
+        if ( empty( $models ) ) {
+            $models = [
+                'gemini-3.5-flash' => 'Gemini 3.5 Flash',
+                'gemini-3.5-pro'   => 'Gemini 3.5 Pro',
+            ];
+        }
+
+        // --- Dynamic Default Engine ---
+        // 1. Look for the absolute newest active flash model to mark as recommended
+        $recommended_model = '';
+        foreach ( array_keys( $models ) as $model_key ) {
+            if ( strpos( $model_key, '-flash' ) !== false ) {
+                // If we haven't found a flash model yet, or this one has a higher version string
+                if ( empty( $recommended_model ) || version_compare( $model_key, $recommended_model, '>' ) ) {
+                    $recommended_model = $model_key;
+                }
+            }
+        }
+        
+        // 2. Fall back to the first available model if no explicitly named flash model exists
+        if ( empty( $recommended_model ) ) {
+            $model_keys = array_keys( $models );
+            $recommended_model = ! empty( $model_keys ) ? $model_keys[0] : '';
+        }
+
+        // 3. Check the database, defaulting to our dynamically calculated recommendation
+        $saved_option  = get_option( 'polly_alt_model', '' );
+        $current_model = ( ! empty( $saved_option ) && array_key_exists( $saved_option, $models ) ) ? $saved_option : $recommended_model;
+        $has_key       = ! empty( get_option( 'polly_alt_api_key', '' ) );
+        ?>
+        <select name="polly_alt_model" id="polly-alt-model" class="polly-alt-model-select" <?php disabled( ! $has_key ); ?>>
+            <?php if ( ! $has_key ) : ?>
+                <option value="">— Key Required —</option>
+            <?php else : ?>
+                <?php foreach ( $models as $value => $label ) : 
+                    // Dynamically append the label to the live recommended model
+                    $display_label = ( $recommended_model === $value ) ? $label . ' (Recommended)' : $label;
+                    ?>
+                    <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $current_model, $value ); ?>>
+                        <?php echo esc_html( $display_label ); ?>
+                    </option>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </select>
+        <p class="description">
+            <?php if ( $has_key ) : ?>
+                Select the active Gemini model for image analysis. This list stays updated dynamically via Google's live endpoints.
+            <?php else : ?>
+                <strong>Please add and save a valid Gemini API Key above to unlock model configuration options.</strong>
+            <?php endif; ?>
+        </p>
+        <?php
+    }, 'polly-alt-settings', 'polly_main_section' );
+
+    add_settings_field( 'choices', 'Suggestions per Squawk', function () {
+        $val = (int) get_option( 'polly_alt_choices', 3 );
+        ?>
+        <input
+            type="number"
+            name="polly_alt_choices"
+            value="<?php echo esc_attr( $val ); ?>"
+            min="1"
+            max="5"
+        >
+        <p class="description">How many AI-generated alt text options to offer (1–5).</p>
+        <?php
+    }, 'polly-alt-settings', 'polly_main_section' );
+
+    add_settings_field( 'include_explanation', 'AI Training', function () {
+        $val = get_option( 'polly_alt_include_explanation', 1 );
+        ?>
+        <label>
+            <input
+                type="checkbox"
+                name="polly_alt_include_explanation"
+                value="1"
+                <?php checked( 1, $val ); ?>
+            >
+            Include educational explanations alongside each suggestion
+        </label>
+        <?php
+    }, 'polly-alt-settings', 'polly_main_section' );
+
+    add_settings_field( 'remove_title', 'Clean Decks', function () {
+        $val = get_option( 'polly_alt_remove_title', 0 );
+        ?>
+        <label>
+            <input
+                type="checkbox"
+                name="polly_alt_remove_title"
+                value="1"
+                <?php checked( 1, $val ); ?>
+            >
+            Clear the attachment Title field when alt text is applied via the AI modal
+        </label>
+        <p class="description">
+            This only happens when you <strong>select</strong> a suggestion from the AI modal,
+            not on every auto-save, so you won't lose titles accidentally.
+        </p>
+        <?php
+    }, 'polly-alt-settings', 'polly_main_section' );
+} );
+
+// Settings link on the Plugins list page.
+add_filter( 'plugin_action_links_' . plugin_basename( POLLY_ALT_PLUGIN_FILE ), function ( $links ) {
+    $settings_link = '<a href="' . esc_url( admin_url( 'options-general.php?page=polly-alt-settings' ) ) . '">'
+        . esc_html__( 'Settings', 'polly-alt' ) . '</a>';
+    array_unshift( $links, $settings_link );
+    return $links;
+} );
+
+// Clear the model list cache instantly if the API key setting is updated.
+add_action( 'update_option_polly_alt_api_key', function() {
+    delete_transient( 'polly_alt_models_list' );
+});
+
+// =============================================================================
+// 2. Media Library List View Column
+// =============================================================================
+
+add_filter( 'manage_media_columns', function ( $columns ) {
+    $columns['polly_alt_col'] = 'Alt Text';
+    return $columns;
+} );
+
+add_action( 'manage_media_custom_column', function ( $column_name, $attachment_id ) {
+    if ( 'polly_alt_col' !== $column_name ) return;
+
+    $alt      = get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
+    $field_id = 'polly-list-alt-' . absint( $attachment_id );
+    ?>
+    <div class="polly-list-field-container" data-id="<?php echo absint( $attachment_id ); ?>">
+        <div class="polly-field-header">
+            <label class="polly-custom-field-label" for="<?php echo esc_attr( $field_id ); ?>">Alt Text</label>
+            <div class="polly-char-counter">0 characters</div>
+        </div>
+        <textarea
+            id="<?php echo esc_attr( $field_id ); ?>"
+            class="polly-list-alt-field"
+            placeholder="Please add alternative text for blind and low-vision users"
+        ><?php echo esc_textarea( $alt ); ?></textarea>
+    </div>
+    <?php
+}, 10, 2 );
+
+// =============================================================================
+// 3. AJAX Handler
+// =============================================================================
+
+add_action( 'wp_ajax_polly_save_alt', function () {
+    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'Security check failed. Please reload the page and try again.' ], 403 );
+    }
+
+    if ( ! current_user_can( 'upload_files' ) ) {
+        wp_send_json_error( [ 'message' => 'You do not have permission to edit media.' ], 403 );
+    }
+
+    $attachment_id = absint( $_POST['attachment_id'] ?? 0 );
+    if ( $attachment_id <= 0 ) {
+        wp_send_json_error( [ 'message' => 'Invalid attachment ID.' ], 400 );
+    }
+
+    if ( 'attachment' !== get_post_type( $attachment_id ) ) {
+        wp_send_json_error( [ 'message' => 'Post is not a media attachment.' ], 400 );
+    }
+
+    $alt_text = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
+    update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+
+    // Store the persistent decorative state in the WordPress post meta database
+    if ( isset( $_POST['is_decorative'] ) ) {
+        $is_decorative_raw = sanitize_text_field( wp_unslash( $_POST['is_decorative'] ) );
+        $is_decorative     = ( '1' === $is_decorative_raw ) ? '1' : '0';
+        update_post_meta( $attachment_id, '_polly_is_decorative', $is_decorative );
+    }
+
+    /*
+     * "Clean Decks" — only fires when the client sends remove_title=1,
+     * which the JS only does on deliberate AI modal selections, not on
+     * every blur auto-save, so titles are never silently erased.
+     */
+    $remove_title_raw = isset( $_POST['remove_title'] ) ? sanitize_text_field( wp_unslash( $_POST['remove_title'] ) ) : '';
+    $remove_title      = '1' === $remove_title_raw;
+    if ( $remove_title ) {
+        wp_update_post( [
+            'ID'         => $attachment_id,
+            'post_title' => '',
+        ] );
+    }
+
+    wp_send_json_success( [ 'attachment_id' => $attachment_id ] );
+} );
+
+// =============================================================================
+// 4. Enqueue Assets
+// =============================================================================
+
+add_action( 'admin_enqueue_scripts', function ( $hook ) {
+    $screen = get_current_screen();
+    if ( ! $screen ) return;
+
+    $allowed_bases = [ 'upload', 'media', 'post', 'page', 'elementor' ];
+    if ( ! in_array( $screen->base, $allowed_bases, true ) ) return;
+
+    polly_alt_enqueue_assets();
+} );
+
+add_action( 'elementor/editor/before_enqueue_scripts', function () {
+    polly_alt_enqueue_assets();
+} );
+
+function polly_alt_enqueue_assets() {
+    $api_key  = get_option( 'polly_alt_api_key', '' );
+    $base_url = plugin_dir_url( POLLY_ALT_PLUGIN_FILE );
+
+    wp_enqueue_media();
+
+    wp_enqueue_style(
+        'polly-alt-style',
+        $base_url . 'assets/polly-alt.css',
+        [],
+        POLLY_ALT_VERSION
+    );
+
+    wp_enqueue_script(
+        'polly-alt-script',
+        $base_url . 'assets/polly-alt.js',
+        [ 'jquery', 'media-editor' ],
+        POLLY_ALT_VERSION,
+        true
+    );
+
+    wp_localize_script( 'polly-alt-script', 'pollyConfig', [
+        // Dynamically grab the exact model from the option database, defaulting to a live stable model
+        'model'              => get_option( 'polly_alt_model', 'gemini-3.5-flash' ),
+        'choiceCount'        => (int) get_option( 'polly_alt_choices', 3 ),
+        'removeTitle'        => (bool) get_option( 'polly_alt_remove_title', 0 ),
+        'includeExplanation' => (bool) get_option( 'polly_alt_include_explanation', 1 ),
+        'ajaxUrl'            => admin_url( 'admin-ajax.php' ),
+        'nonce'              => wp_create_nonce( 'polly_nonce' ),
+    ] );
+}
+
+// Register custom fields to the WP REST API and Media Schema so editor scripts can access the meta value
+add_action( 'rest_api_init', function () {
+    register_rest_field( 'attachment', 'is_decorative', [
+        'get_callback' => function ( $attachment ) {
+            return '1' === get_post_meta( $attachment['id'], '_polly_is_decorative', true );
+        },
+        'update_callback' => function ( $value, $attachment ) {
+            $is_decorative = $value ? '1' : '0';
+            return update_post_meta( $attachment->ID, '_polly_is_decorative', $is_decorative );
+        },
+        'schema' => [
+            'description' => __( 'Whether the image is marked as decorative.', 'polly-alt' ),
+            'type'        => 'boolean',
+        ],
+    ] );
+} );
+
+// =============================================================================
+// 5. Handle API Key Securely
+// =============================================================================
+
+add_action('wp_ajax_polly_gemini_proxy', function() {
+    if (!check_ajax_referer('polly_nonce', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Security check failed.'], 403);
+    }
+    if (!current_user_can('upload_files')) {
+        wp_send_json_error(['message' => 'Permission denied.'], 403);
+    }
+
+    $api_key = get_option('polly_alt_api_key', '');
+    if (!$api_key) {
+        $settings_url = esc_url( admin_url( 'options-general.php?page=polly-alt-settings' ) );
+        wp_send_json_error(['message' => 'No API key configured. <a href="' . $settings_url . '" target="_blank" rel="noopener">Go to settings to fix that (opens in a new tab).</a>'], 400);
+    }
+
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce already verified above via check_ajax_referer() with $die=false; failure is handled immediately by the wp_send_json_error() call.
+    $model = sanitize_text_field( wp_unslash( $_POST['model'] ?? 'gemini-3.5-flash' ) );
+    if ( ! preg_match( '/^[a-zA-Z0-9._-]+$/', $model ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid model identifier.' ], 400 );
+    }
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified above via check_ajax_referer(); raw JSON is validated via json_decode() + a structural check on `contents` immediately below, then re-encoded before use, so sanitize_text_field() would corrupt legitimate JSON content.
+    $raw_payload  = isset( $_POST['payload'] ) ? wp_unslash( $_POST['payload'] ) : '';
+    $payload_data = json_decode( $raw_payload, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE || empty( $payload_data['contents'] ) || ! is_array( $payload_data['contents'] ) ) {
+        wp_send_json_error( [ 'message' => 'Malformed request payload.' ], 400 );
+    }
+
+    // Re-encode from the validated array rather than forwarding the raw string.
+    $body = wp_json_encode( $payload_data );
+
+    $response = wp_remote_post(
+        "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key=" . rawurlencode( $api_key ),
+        [
+            'headers' => ['Content-Type' => 'application/json'],
+            'body'    => $body,
+            'timeout' => 30,
+        ]
+    );
+
+    if (is_wp_error($response)) {
+        wp_send_json_error(['message' => $response->get_error_message()], 500);
+    }
+
+    $code = wp_remote_retrieve_response_code($response);
+    $data = json_decode(wp_remote_retrieve_body($response), true);
+
+    if ($code !== 200) {
+        wp_send_json_error(['message' => $data['error']['message'] ?? 'Gemini error.'], $code);
+    }
+
+    wp_send_json_success($data);
+});
+
+// =============================================================================
+// 6. Multi-Instance Discovery & Save
+// =============================================================================
+
+/**
+ * Recursively flatten nested Gutenberg blocks (columns, groups, etc.) into a single
+ * ordered list, preserving document order. Paragraph/heading blocks carry their
+ * plain-text content so we can find nearby context for any image block.
+ */
+function polly_flatten_blocks( $blocks ) {
+    $flat = [];
+
+    foreach ( $blocks as $block ) {
+        if ( ! empty( $block['blockName'] ) ) {
+            $text = '';
+            if ( in_array( $block['blockName'], [ 'core/paragraph', 'core/heading' ], true ) ) {
+                $text = trim( wp_strip_all_tags( $block['innerHTML'] ?? '' ) );
+            }
+
+            $flat[] = [
+                'blockName' => $block['blockName'],
+                'attrs'     => $block['attrs'] ?? [],
+                'text'      => $text,
+            ];
+        }
+
+        if ( ! empty( $block['innerBlocks'] ) ) {
+            $flat = array_merge( $flat, polly_flatten_blocks( $block['innerBlocks'] ) );
+        }
+    }
+
+    return $flat;
+}
+
+/**
+ * Walk a flattened block list away from $index in $direction (-1 or 1) and return
+ * the first paragraph/heading text found, or '' if the post runs out.
+ */
+function polly_nearest_text( $flat, $index, $direction ) {
+    $i = $index + $direction;
+    while ( isset( $flat[ $i ] ) ) {
+        if ( '' !== $flat[ $i ]['text'] ) {
+            return $flat[ $i ]['text'];
+        }
+        $i += $direction;
+    }
+    return '';
+}
+
+/**
+ * Phase 1 (indexless) scan: find Gutenberg image blocks referencing this attachment
+ * across all posts, pulling the nearest paragraph/heading text on either side.
+ *
+ * instance_id is the Nth occurrence of THIS attachment within the post (not a raw
+ * block index), so it stays valid even if unrelated content changes between the
+ * scan and the eventual save.
+ *
+ * @param int $attachment_id
+ * @return array Usage rows: { post_id, post_title, type, instance_id, current_alt, paragraphsBefore, paragraphsAfter }
+ */
+function polly_scan_gutenberg_usages( $attachment_id ) {
+    global $wpdb;
+
+    $like_class = '%wp-image-' . (int) $attachment_id . '%';
+    $like_id    = '%"id":' . (int) $attachment_id . ',%';
+
+    $posts = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT ID, post_title, post_content FROM {$wpdb->posts}
+             WHERE post_status NOT IN ('trash', 'auto-draft')
+             AND post_type NOT IN ('revision', 'attachment')
+             AND (post_content LIKE %s OR post_content LIKE %s)",
+            $like_class,
+            $like_id
+        )
+    );
+
+    $usages = [];
+
+    foreach ( $posts as $post ) {
+        $flat       = polly_flatten_blocks( parse_blocks( $post->post_content ) );
+        $occurrence = 0;
+
+        foreach ( $flat as $index => $block ) {
+            if ( 'core/image' !== $block['blockName'] ) {
+                continue;
+            }
+            if ( (int) ( $block['attrs']['id'] ?? 0 ) !== (int) $attachment_id ) {
+                continue;
+            }
+
+            $usages[] = [
+                'post_id'          => $post->ID,
+                'post_title'       => html_entity_decode( $post->post_title, ENT_QUOTES, 'UTF-8' ),
+                'type'             => 'gutenberg',
+                'instance_id'      => (string) $occurrence,
+                'current_alt'      => $block['attrs']['alt'] ?? '',
+                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
+                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+            ];
+            $occurrence++;
+        }
+    }
+
+    return $usages;
+}
+
+/**
+ * Recursively flatten Elementor's nested element tree (sections/columns/containers)
+ * into a single ordered list, preserving document order. Heading/text-editor widgets
+ * carry plain-text content for nearby-context lookups.
+ */
+function polly_flatten_elementor_elements( $elements ) {
+    $flat = [];
+
+    foreach ( (array) $elements as $element ) {
+        $widget_type = $element['widgetType'] ?? '';
+        $settings    = $element['settings'] ?? [];
+
+        $text = '';
+        if ( 'heading' === $widget_type ) {
+            $text = trim( wp_strip_all_tags( $settings['title'] ?? '' ) );
+        } elseif ( 'text-editor' === $widget_type ) {
+            $text = trim( wp_strip_all_tags( $settings['editor'] ?? '' ) );
+        }
+
+        $flat[] = [
+            'widgetType' => $widget_type,
+            'settings'   => $settings,
+            'text'       => $text,
+        ];
+
+        if ( ! empty( $element['elements'] ) ) {
+            $flat = array_merge( $flat, polly_flatten_elementor_elements( $element['elements'] ) );
+        }
+    }
+
+    return $flat;
+}
+
+/**
+ * Phase 1 (indexless) scan: find Elementor image widgets referencing this attachment
+ * across all posts, pulling the nearest heading/text-editor content on either side.
+ * instance_id uses the same "Nth occurrence of this attachment" scheme as the
+ * Gutenberg scan, so it survives unrelated edits between scan and save.
+ *
+ * @return array Usage rows: { post_id, post_title, type, instance_id, current_alt, paragraphsBefore, paragraphsAfter }
+ */
+function polly_scan_elementor_usages( $attachment_id ) {
+    global $wpdb;
+
+    $like_id = '%"id":' . (int) $attachment_id . '%';
+
+    $post_ids = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT pm.post_id FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = '_elementor_data'
+             AND pm.meta_value LIKE %s
+             AND p.post_status NOT IN ( 'trash', 'auto-draft', 'inherit' )
+             AND p.post_type NOT IN ( 'revision', 'attachment' )",
+            $like_id
+        )
+    );
+
+    $usages = [];
+
+    foreach ( $post_ids as $post_id ) {
+        $raw  = get_post_meta( $post_id, '_elementor_data', true );
+        $data = json_decode( $raw, true );
+        if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $data ) ) {
+            continue;
+        }
+
+        $flat       = polly_flatten_elementor_elements( $data );
+        $occurrence = 0;
+
+        foreach ( $flat as $index => $element ) {
+            if ( 'image' !== $element['widgetType'] ) {
+                continue;
+            }
+            if ( (int) ( $element['settings']['image']['id'] ?? 0 ) !== (int) $attachment_id ) {
+                continue;
+            }
+
+            $usages[] = [
+                'post_id'          => $post_id,
+                'post_title'       => html_entity_decode( get_the_title( $post_id ), ENT_QUOTES, 'UTF-8' ),
+                'type'             => 'elementor',
+                'instance_id'      => (string) $occurrence,
+                'current_alt'      => $element['settings']['image']['alt'] ?? '',
+                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
+                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+            ];
+            $occurrence++;
+        }
+    }
+
+    return $usages;
+}
+
+add_action( 'wp_ajax_polly_get_usages', function () {
+    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
+    }
+    if ( ! current_user_can( 'upload_files' ) ) {
+        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
+    }
+
+    $attachment_id = absint( $_POST['attachment_id'] ?? 0 );
+    if ( $attachment_id <= 0 || 'attachment' !== get_post_type( $attachment_id ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid attachment ID.' ], 400 );
+    }
+
+    $cache_key = 'polly_usages_' . $attachment_id;
+    $usages    = get_transient( $cache_key );
+
+    if ( false === $usages ) {
+        $usages = array_merge(
+            polly_scan_gutenberg_usages( $attachment_id ),
+            class_exists( '\Elementor\Plugin' ) ? polly_scan_elementor_usages( $attachment_id ) : []
+        );
+        set_transient( $cache_key, $usages, HOUR_IN_SECONDS );
+    }
+
+    wp_send_json_success( [ 'usages' => $usages ] );
+} );
+
+// Invalidate every cached usage scan whenever a post is saved — cheap and simple for
+// Phase 1; a future pass could scope this to just the attachment IDs a given post
+// actually references, instead of clearing everything.
+add_action( 'save_post', function ( $post_id ) {
+    if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+        return;
+    }
+
+    global $wpdb;
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_polly_usages_%' OR option_name LIKE '_transient_timeout_polly_usages_%'"
+    );
+} );
+
+/**
+ * Recursive walker that mutates $blocks in place, setting the alt attribute (both
+ * the block attrs AND the rendered <img> markup) on the Nth core/image block
+ * referencing $attachment_id. $counter is passed by reference so the occurrence
+ * count carries across recursive calls into innerBlocks.
+ */
+function polly_set_gutenberg_block_alt( &$blocks, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
+    foreach ( $blocks as &$block ) {
+        if ( 'core/image' === $block['blockName'] && (int) ( $block['attrs']['id'] ?? 0 ) === $attachment_id ) {
+            if ( $counter === $target_occurrence ) {
+                $block['attrs']['alt'] = $alt_text;
+
+                if ( preg_match( '/<img[^>]*>/', $block['innerHTML'], $img_match ) ) {
+                    $img_tag = $img_match[0];
+                    $new_tag = preg_match( '/\salt="[^"]*"/', $img_tag )
+                        ? preg_replace( '/\salt="[^"]*"/', ' alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 )
+                        : preg_replace( '/<img/', '<img alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 );
+
+                    $block['innerHTML'] = substr_replace( $block['innerHTML'], $new_tag, strpos( $block['innerHTML'], $img_tag ), strlen( $img_tag ) );
+                    if ( isset( $block['innerContent'][0] ) ) {
+                        $block['innerContent'][0] = $block['innerHTML'];
+                    }
+                }
+
+                return true;
+            }
+            $counter++;
+        }
+
+        if ( ! empty( $block['innerBlocks'] ) ) {
+            if ( polly_set_gutenberg_block_alt( $block['innerBlocks'], $attachment_id, $target_occurrence, $alt_text, $counter ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Update the alt attribute on the Nth occurrence of $attachment_id within a post's
+ * Gutenberg blocks (occurrence defined the same way as polly_scan_gutenberg_usages),
+ * then reassemble and save the post content.
+ *
+ * @return bool True on success, false if the target block couldn't be located.
+ */
+function polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
+    $post = get_post( $post_id );
+    if ( ! $post ) {
+        return false;
+    }
+
+    $blocks   = parse_blocks( $post->post_content );
+    $counter  = 0;
+    $alt_text = sanitize_text_field( $alt_text );
+    $found    = polly_set_gutenberg_block_alt( $blocks, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
+
+    if ( ! $found ) {
+        return false;
+    }
+
+    wp_update_post( [
+        'ID'           => $post_id,
+        'post_content' => serialize_blocks( $blocks ),
+    ] );
+
+    return true;
+}
+
+/**
+ * Recursive walker mirroring polly_set_gutenberg_block_alt: mutates $elements in
+ * place, setting settings.image.alt on the Nth image widget referencing
+ * $attachment_id, using the same occurrence counting as polly_scan_elementor_usages.
+ */
+function polly_set_elementor_element_alt( &$elements, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
+    foreach ( $elements as &$element ) {
+        if ( 'image' === ( $element['widgetType'] ?? '' )
+            && (int) ( $element['settings']['image']['id'] ?? 0 ) === $attachment_id
+        ) {
+            if ( $counter === $target_occurrence ) {
+                $element['settings']['image']['alt'] = $alt_text;
+                return true;
+            }
+            $counter++;
+        }
+
+        if ( ! empty( $element['elements'] ) ) {
+            if ( polly_set_elementor_element_alt( $element['elements'], $attachment_id, $target_occurrence, $alt_text, $counter ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Update the alt text on the Nth Elementor image widget referencing $attachment_id,
+ * save _elementor_data, and clear Elementor's CSS/file cache so the change shows up
+ * on the front end immediately.
+ *
+ * @return bool True on success, false if the target widget couldn't be located.
+ */
+function polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
+    $raw  = get_post_meta( $post_id, '_elementor_data', true );
+    $data = json_decode( $raw, true );
+
+    if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $data ) ) {
+        return false;
+    }
+
+    $counter  = 0;
+    $alt_text = sanitize_text_field( $alt_text );
+    $found    = polly_set_elementor_element_alt( $data, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
+
+    if ( ! $found ) {
+        return false;
+    }
+
+    update_post_meta( $post_id, '_elementor_data', wp_json_encode( $data ) );
+
+    if ( class_exists( '\Elementor\Plugin' ) ) {
+        \Elementor\Plugin::$instance->files_manager->clear_cache();
+    }
+
+    return true;
+}
+
+add_action( 'wp_ajax_polly_save_instance_alt', function () {
+    if ( ! check_ajax_referer( 'polly_nonce', 'nonce', false ) ) {
+        wp_send_json_error( [ 'message' => 'Security check failed.' ], 403 );
+    }
+
+    $post_id       = absint( $_POST['post_id'] ?? 0 );
+    $attachment_id = absint( $_POST['attachment_id'] ?? 0 );
+    $type          = sanitize_text_field( wp_unslash( $_POST['type'] ?? '' ) );
+    $occurrence    = absint( $_POST['instance_id'] ?? 0 );
+    $alt_text      = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
+
+    if ( ! $post_id || ! $attachment_id || ! in_array( $type, [ 'gutenberg', 'elementor' ], true ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid instance save request.' ], 400 );
+    }
+
+    // This writes to a DIFFERENT post's content than the attachment itself, so the
+    // capability check must be against that specific post — upload_files alone
+    // doesn't imply permission to edit arbitrary posts.
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
+    }
+
+    $saved = ( 'gutenberg' === $type )
+        ? polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text )
+        : polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+
+    if ( ! $saved ) {
+        wp_send_json_error( [ 'message' => 'Could not locate that image instance — it may have moved. Try refreshing.' ], 404 );
+    }
+
+    delete_transient( 'polly_usages_' . $attachment_id );
+
+    wp_send_json_success();
+} );
+
+// Display a helpful hint on the Media Library screen if users are on the grid view
+add_action( 'admin_notices', function () {
+    $screen = get_current_screen();
+    if ( ! $screen || 'upload' !== $screen->base ) {
+        return;
+    }
+
+    // Check if user is on the thumbnail/grid view (WordPress default layout)
+    $mode = isset( $_GET['mode'] ) ? sanitize_text_field( wp_unslash( $_GET['mode'] ) ) : '';
+    if ( 'list' === $mode ) {
+        return;
+    }
+
+    // Don't show if they've already dismissed it
+    $user_id = get_current_user_id();
+    if ( get_user_meta( $user_id, 'dismissed_polly_view_notice', true ) ) {
+        return;
+    }
+    ?>
+    <div class="notice notice-info is-dismissible polly-view-hint-notice">
+        <p>
+            🦜 <strong><?php esc_html_e( 'Polly Alt Tip:', 'polly-alt' ); ?></strong>
+            <?php
+            printf(
+                /* translators: %s: "List View layout" link */
+                esc_html__( 'To generate and tweak your alt text values right inside the Media Library dashboard, switch over to the %s! Polly also works automatically when you click images inside the Gutenberg and Elementor post editors.', 'polly-alt' ),
+                '<a href="' . esc_url( admin_url( 'upload.php?mode=list' ) ) . '"><strong>' . esc_html__( 'List View layout', 'polly-alt' ) . '</strong></a>'
+            );
+            ?>
+        </p>
+    </div>
+    <?php
+    // Register an empty-src handle purely as an anchor for wp_add_inline_script() —
+    // avoids a raw <script> tag while still not needing a whole extra .js file.
+    wp_register_script( 'polly-alt-notice-dismiss', '', [ 'jquery' ], POLLY_ALT_VERSION, true );
+    wp_enqueue_script( 'polly-alt-notice-dismiss' );
+    wp_add_inline_script(
+        'polly-alt-notice-dismiss',
+        sprintf(
+            'jQuery(document).on("click", ".polly-view-hint-notice .notice-dismiss", function () { wp.ajax.post("polly_dismiss_view_notice", { _ajax_nonce: %s }); });',
+            wp_json_encode( wp_create_nonce( 'polly_view_nonce' ) )
+        )
+    );
+} );
+
+// AJAX endpoint to save the user's dismissal choice
+add_action( 'wp_ajax_polly_dismiss_view_notice', function () {
+    check_ajax_referer( 'polly_view_nonce' );
+    update_user_meta( get_current_user_id(), 'dismissed_polly_view_notice', true );
+    wp_send_json_success();
+} );
