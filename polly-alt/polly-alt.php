@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 1.2.0
+ * Version: 1.2.8
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '1.2.0' );
+define( 'POLLY_ALT_VERSION', '1.2.8' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -548,6 +548,7 @@ function polly_flatten_blocks( $blocks ) {
                 'blockName' => $block['blockName'],
                 'attrs'     => $block['attrs'] ?? [],
                 'text'      => $text,
+                'innerHTML' => $block['innerHTML'] ?? '',
             ];
         }
 
@@ -588,17 +589,17 @@ function polly_nearest_text( $flat, $index, $direction ) {
 function polly_scan_gutenberg_usages( $attachment_id ) {
     global $wpdb;
 
-    $like_class = '%wp-image-' . (int) $attachment_id . '%';
-    $like_id    = '%"id":' . (int) $attachment_id . ',%';
+    $like_class = '%wp-image-';
+    $like_id    = '%"id":';
+
 
     $posts = $wpdb->get_results(
         $wpdb->prepare(
-            "SELECT ID, post_title, post_content FROM {$wpdb->posts}
-             WHERE post_status NOT IN ('trash', 'auto-draft')
-             AND post_type NOT IN ('revision', 'attachment')
-             AND (post_content LIKE %s OR post_content LIKE %s)",
-            $like_class,
-            $like_id
+            "SELECT ID, post_title, post_content 
+            FROM {$wpdb->posts} 
+            WHERE post_status = 'publish' 
+            AND post_type = 'post' 
+            LIMIT 20"
         )
     );
 
@@ -608,26 +609,51 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
         $flat       = polly_flatten_blocks( parse_blocks( $post->post_content ) );
         $occurrence = 0;
 
-        foreach ( $flat as $index => $block ) {
+                foreach ( $flat as $index => $block ) {
             if ( 'core/image' !== $block['blockName'] ) {
                 continue;
             }
-            if ( (int) ( $block['attrs']['id'] ?? 0 ) !== (int) $attachment_id ) {
+
+            $block_id = (int) ( $block['attrs']['id'] ?? 0 );
+            if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
+                $block_id = (int) $m[1];
+            }
+
+            if ( $block_id !== (int) $attachment_id ) {
                 continue;
+            }
+
+            $link_url = $block['attrs']['href'] ?? '';
+            if ( ! $link_url && ! empty( $block['innerHTML'] ) && preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\']/i', $block['innerHTML'], $lm ) ) {
+                $link_url = $lm[1];
+            }
+            $dest_title = '';
+            if ( $link_url ) {
+                $target_post_id = url_to_postid( $link_url );
+                if ( $target_post_id ) {
+                    $dest_title = wp_specialchars_decode( get_the_title( $target_post_id ), ENT_QUOTES );
+                }
             }
 
             $usages[] = [
                 'post_id'          => $post->ID,
-                'post_title'       => html_entity_decode( $post->post_title, ENT_QUOTES, 'UTF-8' ),
+                'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
                 'type'             => 'gutenberg',
                 'instance_id'      => (string) $occurrence,
                 'current_alt'      => $block['attrs']['alt'] ?? '',
                 'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
                 'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+                'isFunctional'     => ! empty( $link_url ),
+                'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
+                'destination'      => $link_url,
+                'destinationTitle' => $dest_title,
             ];
             $occurrence++;
         }
     }
+    
+    
+
 
     return $usages;
 }
@@ -678,17 +704,18 @@ function polly_scan_elementor_usages( $attachment_id ) {
 
     $like_id = '%"id":' . (int) $attachment_id . '%';
 
-    $post_ids = $wpdb->get_col(
+        $post_ids = $wpdb->get_col(
         $wpdb->prepare(
             "SELECT pm.post_id FROM {$wpdb->postmeta} pm
-             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
              WHERE pm.meta_key = '_elementor_data'
              AND pm.meta_value LIKE %s
-             AND p.post_status NOT IN ( 'trash', 'auto-draft', 'inherit' )
-             AND p.post_type NOT IN ( 'revision', 'attachment' )",
+             AND p.post_status NOT IN ('trash', 'auto-draft', 'inherit')
+             AND p.post_type NOT IN ('revision', 'attachment')",
             $like_id
         )
     );
+
 
     $usages = [];
 
@@ -710,14 +737,27 @@ function polly_scan_elementor_usages( $attachment_id ) {
                 continue;
             }
 
+            $link_url = $element['settings']['link']['url'] ?? '';
+            $dest_title = '';
+            if ( $link_url ) {
+                $target_post_id = url_to_postid( $link_url );
+                if ( $target_post_id ) {
+                    $dest_title = wp_specialchars_decode( get_the_title( $target_post_id ), ENT_QUOTES );
+                }
+            }
+
             $usages[] = [
                 'post_id'          => $post_id,
-                'post_title'       => html_entity_decode( get_the_title( $post_id ), ENT_QUOTES, 'UTF-8' ),
+                'post_title'       => wp_specialchars_decode( get_the_title( $post_id ), ENT_QUOTES ),
                 'type'             => 'elementor',
                 'instance_id'      => (string) $occurrence,
                 'current_alt'      => $element['settings']['image']['alt'] ?? '',
                 'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
                 'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+                'isFunctional'     => ! empty( $link_url ),
+                'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
+                'destination'      => $link_url,
+                'destinationTitle' => $dest_title,
             ];
             $occurrence++;
         }
@@ -742,7 +782,7 @@ add_action( 'wp_ajax_polly_get_usages', function () {
     $cache_key = 'polly_usages_' . $attachment_id;
     $usages    = get_transient( $cache_key );
 
-    if ( false === $usages ) {
+    if ( false === $usages || empty( $usages)) {
         $usages = array_merge(
             polly_scan_gutenberg_usages( $attachment_id ),
             class_exists( '\Elementor\Plugin' ) ? polly_scan_elementor_usages( $attachment_id ) : []

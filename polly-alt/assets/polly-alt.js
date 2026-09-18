@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.2.0
+ * Polly Alt AI - Logic v1.2.7
 **/
 (function () {
 
@@ -71,21 +71,40 @@
     }
 
     function buildPageContextBox(pageContext) {
-        if (!pageContext || (!pageContext.paragraphsBefore && !pageContext.paragraphsAfter)) return null;
+        if (!pageContext) return null;
+        const hasParagraphs = pageContext.paragraphsBefore || pageContext.paragraphsAfter;
+        if (!hasParagraphs && !pageContext.isFunctional) return null;
 
         const box = document.createElement('div');
         box.className = 'polly-page-context';
 
-        const label = document.createElement('div');
-        label.className = 'polly-page-context-label';
-        label.textContent = '🦜 Page context:';
-        box.appendChild(label);
+        if (pageContext.isFunctional) {
+            const funcNotice = document.createElement('div');
+            funcNotice.className = 'polly-functional-context-notice';
+            const roleLabel = pageContext.functionalRole === 'button' ? 'Action Button' : 'Link Destination';
+            const destLabel = pageContext.destinationTitle 
+                ? `${pageContext.destinationTitle} (${pageContext.destination})` 
+                : (pageContext.destination || 'Interactive Target');
+            funcNotice.innerHTML = `
+                <div class="polly-functional-badge">🔗 ${roleLabel}</div>
+                <div class="polly-functional-text">This image functions as a ${escapeHtml(pageContext.functionalRole || 'link')}. Polly formulated concise alt text for <strong>${escapeHtml(destLabel)}</strong> without filler words like &ldquo;link&rdquo; or &ldquo;go to&rdquo;.</div>
+            `;
+            box.appendChild(funcNotice);
+        }
 
-        if (pageContext.paragraphsBefore) box.appendChild(buildPageContextItem('Before', pageContext.paragraphsBefore));
-        if (pageContext.paragraphsAfter) box.appendChild(buildPageContextItem('After', pageContext.paragraphsAfter));
+        if (hasParagraphs) {
+            const label = document.createElement('div');
+            label.className = 'polly-page-context-label';
+            label.textContent = '🦜 Page context:';
+            box.appendChild(label);
+
+            if (pageContext.paragraphsBefore) box.appendChild(buildPageContextItem('Before', pageContext.paragraphsBefore));
+            if (pageContext.paragraphsAfter) box.appendChild(buildPageContextItem('After', pageContext.paragraphsAfter));
+        }
 
         return box;
     }
+
 
     function renderPageContext(pageContext, anchorEl, position = 'afterend') {
         const existing = anchorEl.parentNode?.querySelector('.polly-page-context');
@@ -1243,6 +1262,10 @@
             selectedUsageTarget = await promptForUsageInstance(highResSrc, availableUsages, btn);
             if (selectedUsageTarget) {
                 activeContext = {
+                    isFunctional: !!selectedUsageTarget.isFunctional,
+                    functionalRole: selectedUsageTarget.functionalRole || '',
+                    destination: selectedUsageTarget.destination || '',
+                    destinationTitle: selectedUsageTarget.destinationTitle || '',
                     paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
                     paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
                 };
@@ -1250,6 +1273,10 @@
         } else if (!activeContext && availableUsages.length === 1) {
             selectedUsageTarget = availableUsages[0];
             activeContext = {
+                isFunctional: !!selectedUsageTarget.isFunctional,
+                functionalRole: selectedUsageTarget.functionalRole || '',
+                destination: selectedUsageTarget.destination || '',
+                destinationTitle: selectedUsageTarget.destinationTitle || '',
                 paragraphsBefore: selectedUsageTarget.paragraphsBefore || '',
                 paragraphsAfter: selectedUsageTarget.paragraphsAfter || ''
             };
@@ -1269,32 +1296,54 @@
                 `\nUse this surrounding text to decide which visible details matter most. ` +
                 `Don't just restate a fact the text already gives (a name, a place, a number) — ` +
                 `but let it steer which visual elements you foreground. ` +
-                `At least one variation should make the connection between what's visible and what the surrounding text is about clearly obvious, not just implied.\n\n`;
+                `At least the first variation should connect what's visible in the image and what the surrounding text is about.\n\n`;
         }
 
-        const prompt =
-            `You are an accessibility expert writing alt text for a web image. ` +
-            `Generate exactly ${config.choiceCount} distinct alt text variations following these rules:\n\n` +
-            `RULES:\n` +
-            `- Each alt text should be as close to 125 characters as possible without going over\n` +
-            `- Do NOT begin with "image of", "photo of", "picture of", or similar\n` +
-            `- Write in plain language, present tense, active voice\n` +
-            `- Include only what is visible — no interpretation or assumptions\n\n` +
-            contextBlock +
-            `VARIATIONS:\n` +
-            `Each variation must foreground a DIFFERENT visible subject or element from the image as its opening focus — ` +
-            `the thing named first in the alt text should differ across all variations. ` +
-            `For example, if the image shows a harvester in a coffee field, one variation might open with the harvester, ` +
-            `another with the rows of coffee trees, another with the wider farm scene. ` +
-            `Choose the ${config.choiceCount} most distinct and interesting visual elements as your focal points.\n\n` +
-            `Return ONLY a valid JSON array of objects with these exact keys:\n` +
-            `- "alt": the alt text string (100-125 characters, verified)\n` +
-            `- "focus": a short noun phrase naming the visual element foregrounded in this variation (e.g. "orange coffee harvester", "rows of green coffee trees", "hillside coffee farm")\n` +
-            `- "explanation": one sentence explaining why a screen reader user might find this framing useful` +
-            (activeContext && (activeContext.paragraphsBefore || activeContext.paragraphsAfter)
-                ? ` — for at least one variation, explicitly name how this framing connects to the surrounding page text\n\n`
-                : `\n\n`) +
-            `Do not include any text outside the JSON array.`;
+        let prompt = '';
+        if (activeContext?.isFunctional) {
+            const role = activeContext.functionalRole || 'link';
+            const dest = activeContext.destinationTitle 
+                ? `"${activeContext.destinationTitle}" (URL: ${activeContext.destination})` 
+                : (activeContext.destination ? `URL/Action: "${activeContext.destination}"` : 'the linked destination/action');
+
+            prompt =
+                `You are an accessibility and WCAG expert writing functional alternative text for an image that acts as a ${role}.\n\n` +
+                `FUNCTIONAL IMAGE CONTEXT:\n` +
+                `- Role: ${role}\n` +
+                `- Target/Destination: ${dest}\n` +
+                (contextBlock ? contextBlock : '') +
+                `Generate exactly ${config.choiceCount} concise alt text options following these strict rules:\n\n` +
+                `RULES:\n` +
+                `- Stating the destination or initiated action is mandatory. Describe WHERE the link goes or WHAT the button does, NOT what the image looks like.\n` +
+                `- NEVER start with or include words like "link to", "go to", "open", "click here", "image of", or "graphic of". Screen readers announce the link/button role automatically.\n` +
+                `- Keep each option concise (under 125 characters), ideally 2 to 6 words (e.g. "Contact Support", "2026 Annual Report PDF", "Acme Home").\n` +
+                `- Return valid JSON array of objects with exact keys:\n` +
+                `  - "alt": (string) Concise destination/action name under 125 characters.\n` +
+                `  - "focus": (string) "Link Destination" or "Button Action".\n` +
+                `  - "explanation": (string) Brief educational explanation of why this conveys the link target without redundant filler words.\n\n` +
+                `Return ONLY the JSON array.`;
+        } else {
+            prompt =
+                `You are an accessibility expert writing alt text for a web image. ` +
+                `Generate exactly ${config.choiceCount} distinct alt text variations following these rules:\n\n` +
+                `RULES:\n` +
+                `- Each alt text must be between 100 and 125 characters.\n` +
+                `- Do NOT begin with "image of", "photo of", "picture of", or similar.\n` +
+                `- Write in plain language, present tense, active voice.\n` +
+                `- STRICTLY VISUAL: Describe only what is physically visible in the image. Do NOT include narrative commentary, ` +
+                `metaphorical interpretations, or explain how the image relates to the page text within the "alt" field itself.\n` +
+                `- If the image relates to the surrounding text, that connection belongs ONLY in the "explanation" field.\n\n` +
+                contextBlock +
+                `VARIATIONS:\n` +
+                `Foreground a DIFFERENT visual element in each variation as the opening focus.\n\n` +
+                `Return ONLY a valid JSON array of objects with these exact keys:\n` +
+                `- "alt": (string) 100-125 characters. Purely visual description.\n` +
+                `- "focus": (string) Short noun phrase naming the foregrounded element.\n` +
+                `- "explanation": (string) One sentence explaining why this framing provides useful context, ` +
+                `explicitly stating how this visual element supports the surrounding page text.\n\n` +
+                `Do not include any text outside the JSON array.`;
+        }
+
 
         try {
             let imageData;
@@ -1482,13 +1531,7 @@
                 addOption(`${usage.post_title} — ${typeLabel}`, usage);
             });
 
-            select.onchange = () => {
-                selected = select.value === 'global'
-                    ? null
-                    : usages.find(u => `${u.type}-${u.post_id}-${u.instance_id}` === select.value) || null;
-            };
-
-            const trigger = triggerBtn || document.activeElement;
+                        const trigger = triggerBtn || document.activeElement;
             function finish(result) {
                 overlay.remove();
                 modal.remove();
@@ -1498,7 +1541,13 @@
 
             overlay.onclick = () => finish(null);
             modal.addEventListener('polly-close', () => finish(null));
-            body.querySelector('#polly-usage-continue-btn').onclick = () => finish(selected);
+            body.querySelector('#polly-usage-continue-btn').onclick = () => {
+                const val = select.value;
+                const chosen = val === 'global'
+                    ? null
+                    : usages.find(u => `{u.type}-{u.post_id}-{u.instance_id}` === val) || null;
+                finish(chosen);
+            };
 
             document.body.appendChild(overlay);
             document.body.appendChild(modal);
@@ -1682,7 +1731,12 @@
 
                 const options = [];
                 if (original) options.push({ alt: original, label: 'ORIGINAL', explanation: 'Your current text.' });
-                choices.forEach(c => options.push({ ...c, label: 'AI OPTION' }));
+                choices.forEach(c => options.push({ 
+                    ...c, 
+                    label: pageContext?.isFunctional ? 'DESTINATION' : 'AI OPTION',
+                    isFunctional: !!pageContext?.isFunctional
+                }));
+
 
                 options.forEach(opt => {
                     const item = document.createElement('div');
@@ -1884,8 +1938,31 @@
     // preceding/following paragraph-like text — the Gutenberg equivalent of
     // the Chrome extension's DOM-based extractImageContext().
     function getGutenbergPageContext(block) {
-        const context = { isFunctional: false, functionalRole: '', destination: '', paragraphsBefore: '', paragraphsAfter: '' };
+        const context = { isFunctional: false, functionalRole: '', destination: '', destinationTitle: '', paragraphsBefore: '', paragraphsAfter: '' };
         if (!block || !window.wp?.data) return context;
+
+        // 1. Direct link attribute detection
+        if (block.attributes?.href || block.attributes?.url) {
+            context.isFunctional = true;
+            context.functionalRole = 'link';
+            context.destination = block.attributes.href || block.attributes.url || '';
+        }
+
+        // 2. DOM anchor/button wrapper inspection
+        if (!context.isFunctional && block.clientId) {
+            const blockDOM = document.getElementById(`block-${block.clientId}`);
+            const linkParent = blockDOM?.querySelector('a') || blockDOM?.closest('a');
+            const buttonParent = blockDOM?.querySelector('button') || blockDOM?.closest('button');
+            if (linkParent) {
+                context.isFunctional = true;
+                context.functionalRole = 'link';
+                context.destination = linkParent.getAttribute('href') || linkParent.getAttribute('aria-label') || '';
+            } else if (buttonParent) {
+                context.isFunctional = true;
+                context.functionalRole = 'button';
+                context.destination = buttonParent.getAttribute('aria-label') || buttonParent.innerText?.trim() || buttonParent.type || 'Button trigger';
+            }
+        }
 
         const TEXT_BLOCKS = ['core/paragraph', 'core/heading', 'core/list', 'core/quote'];
 
@@ -1953,12 +2030,21 @@
     // .elementor-element wrappers for text — the Elementor equivalent of the
     // Chrome extension's DOM-based extractImageContext().
     function getElementorPageContext() {
-        const context = { isFunctional: false, functionalRole: '', destination: '', paragraphsBefore: '', paragraphsAfter: '' };
+        const context = { isFunctional: false, functionalRole: '', destination: '', destinationTitle: '', paragraphsBefore: '', paragraphsAfter: '' };
         if (!window.elementor?.selection) return context;
 
         try {
             const el = elementor.selection.getElements()[0];
             if (!el || !el.id) return context;
+
+            // Direct model settings inspection
+            const settings = el.model?.get('settings');
+            const linkSettings = settings?.get ? settings.get('link') : settings?.link;
+            if (linkSettings?.url) {
+                context.isFunctional = true;
+                context.functionalRole = 'link';
+                context.destination = linkSettings.url;
+            }
 
             const iframeDoc = document.querySelector('#elementor-preview-iframe')?.contentDocument;
             if (!iframeDoc) return context;
@@ -1966,12 +2052,18 @@
             const widgetEl = iframeDoc.querySelector(`[data-id="${el.id}"]`);
             if (!widgetEl) return context;
 
-            // 1. Functional role check (image wrapped in a link)
+            // 1. Functional role check (image wrapped in a link or button)
             const linkParent = widgetEl.querySelector('a') || widgetEl.closest('a');
+            const buttonParent = widgetEl.querySelector('button, [role="button"]') || widgetEl.closest('button, [role="button"]');
             if (linkParent) {
                 context.isFunctional = true;
                 context.functionalRole = 'link';
-                context.destination = linkParent.getAttribute('href') || linkParent.getAttribute('aria-label') || '';
+                context.destination = linkParent.getAttribute('href') || linkParent.getAttribute('aria-label') || context.destination || '';
+                return context;
+            } else if (buttonParent) {
+                context.isFunctional = true;
+                context.functionalRole = 'button';
+                context.destination = buttonParent.getAttribute('aria-label') || buttonParent.innerText?.trim() || 'Interactive button';
                 return context;
             }
 
