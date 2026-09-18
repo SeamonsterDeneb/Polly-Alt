@@ -70,7 +70,7 @@
         return item;
     }
 
-    function buildPageContextBox(pageContext) {
+    function buildPageContextBox(pageContext, phase = 'setup') {
         if (!pageContext) return null;
         const hasParagraphs = pageContext.paragraphsBefore || pageContext.paragraphsAfter;
         if (!hasParagraphs && !pageContext.isFunctional) return null;
@@ -85,9 +85,16 @@
             const destLabel = pageContext.destinationTitle 
                 ? `${pageContext.destinationTitle} (${pageContext.destination})` 
                 : (pageContext.destination || 'Interactive Target');
+            let verbPhrase = 'Polly will come up with';
+            if (phase === 'generating') {
+                verbPhrase = 'Polly is coming up with';
+            } else if (phase === 'presented') {
+                verbPhrase = 'Polly came up with';
+            }
+
             funcNotice.innerHTML = `
                 <div class="polly-functional-badge">🔗 ${roleLabel}</div>
-                <div class="polly-functional-text">This image functions as a ${escapeHtml(pageContext.functionalRole || 'link')}. Polly formulated concise alt text for <strong>${escapeHtml(destLabel)}</strong> without filler words like &ldquo;link&rdquo; or &ldquo;go to&rdquo;.</div>
+                <div class="polly-functional-text">This image functions as a ${escapeHtml(pageContext.functionalRole || 'link')}. ${verbPhrase} concise alt text for <strong>${escapeHtml(destLabel)}</strong> without filler words like &ldquo;link&rdquo; or &ldquo;go to&rdquo;.</div>
             `;
             box.appendChild(funcNotice);
         }
@@ -105,12 +112,11 @@
         return box;
     }
 
-
-    function renderPageContext(pageContext, anchorEl, position = 'afterend') {
+    function renderPageContext(pageContext, anchorEl, position = 'afterend', phase = 'setup') {
         const existing = anchorEl.parentNode?.querySelector('.polly-page-context');
         if (existing) existing.remove();
 
-        const box = buildPageContextBox(pageContext);
+        const box = buildPageContextBox(pageContext, phase);
         if (box) anchorEl.insertAdjacentElement(position, box);
     }
     /**
@@ -1545,7 +1551,7 @@
                 const val = select.value;
                 const chosen = val === 'global'
                     ? null
-                    : usages.find(u => `{u.type}-{u.post_id}-{u.instance_id}` === val) || null;
+                    : usages.find(u => `${u.type}-${u.post_id}-${u.instance_id}` === val) || null;
                 finish(chosen);
             };
 
@@ -1579,7 +1585,7 @@
             </div>
         `;
 
-        const generatingContextBox = buildPageContextBox(pageContext);
+        const generatingContextBox = buildPageContextBox(pageContext, 'generating');
         if (generatingContextBox) body.insertBefore(generatingContextBox, body.firstChild);
 
         const tipText = body.querySelector('.polly-tip-text');
@@ -1726,7 +1732,7 @@
                 modal.setAttribute('aria-label', 'Choose Alt Text');
                 body.innerHTML = '';
 
-                const contextBox = buildPageContextBox(pageContext);
+                const contextBox = buildPageContextBox(pageContext, 'presented');
                 if (contextBox) body.appendChild(contextBox);
 
                 const options = [];

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 1.2.8
+ * Version: 1.3.0
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '1.2.8' );
+define( 'POLLY_ALT_VERSION', '1.3.0' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -589,17 +589,18 @@ function polly_nearest_text( $flat, $index, $direction ) {
 function polly_scan_gutenberg_usages( $attachment_id ) {
     global $wpdb;
 
-    $like_class = '%wp-image-';
-    $like_id    = '%"id":';
-
+    $like_class = '%wp-image-' . (int) $attachment_id . '%';
+    $like_id    = '%"id":' . (int) $attachment_id . '%';
 
     $posts = $wpdb->get_results(
         $wpdb->prepare(
             "SELECT ID, post_title, post_content 
             FROM {$wpdb->posts} 
             WHERE post_status = 'publish' 
-            AND post_type = 'post' 
-            LIMIT 20"
+            AND post_type NOT IN ('revision', 'attachment') 
+            AND (post_content LIKE %s OR post_content LIKE %s)",
+            $like_class,
+            $like_id
         )
     );
 
@@ -730,7 +731,7 @@ function polly_scan_elementor_usages( $attachment_id ) {
         $occurrence = 0;
 
         foreach ( $flat as $index => $element ) {
-            if ( 'image' !== $element['widgetType'] ) {
+            if ( ! in_array( $element['widgetType'], [ 'image', 'e-image', 'theme-site-logo' ], true ) ) {
                 continue;
             }
             if ( (int) ( $element['settings']['image']['id'] ?? 0 ) !== (int) $attachment_id ) {
