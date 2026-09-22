@@ -1,5 +1,5 @@
 /**
- * Polly Alt AI - Logic v1.2.7
+ * Polly Alt AI - Logic v1.3.9
 **/
 (function () {
 
@@ -799,9 +799,12 @@
         // has selected. WordPress tags inserted images with a "wp-image-NNN"
         // class, where NNN is the real attachment ID — far more reliable
         // here than anything in the Image Details dialog's own DOM.
-        const selectedNode = window.tinymce?.activeEditor?.selection?.getNode?.();
-        if (selectedNode?.tagName === 'IMG') {
-            const m = selectedNode.className.match(/wp-image-(\d+)/);
+        const activeEd = window.tinymce?.activeEditor || window.tinymce?.EditorManager?.activeEditor;
+        const selectedNode = activeEd?.selection?.getNode?.();
+        if (selectedNode) {
+            const imgEl = selectedNode.tagName === 'IMG' ? selectedNode : selectedNode.querySelector?.('img');
+            const imgClass = imgEl ? imgEl.className : (selectedNode.className || '');
+            const m = imgClass.match(/wp-image-(\d+)/) || (selectedNode.outerHTML || '').match(/wp-image-(\d+)/);
             if (m) id = m[1];
         }
 
@@ -908,7 +911,7 @@
 
     function initPolly() {
         const allAltFields = document.querySelectorAll(
-            '#attachment-details-alt-text, .polly-list-alt-field, [data-setting="alt"] textarea, .components-textarea-control__input, #attachment_alt, .image-details input#alt, .image-details textarea'
+            '#attachment-details-alt-text, .polly-list-alt-field, [data-setting="alt"] textarea, [data-setting="alt"] input, .components-textarea-control__input, #attachment_alt, .image-details input, .image-details textarea'
         );
 
         allAltFields.forEach(field => {
@@ -1097,9 +1100,25 @@
         } else if (isElementorEditor()) {
             try {
                 mediaModalPageContext = getElementorPageContext();
+                if (!mediaModalPageContext.paragraphsBefore && !mediaModalPageContext.paragraphsAfter) {
+                    const tceContext = getTinyMCEPageContext();
+                    if (tceContext.paragraphsBefore || tceContext.paragraphsAfter || tceContext.isFunctional) {
+                        mediaModalPageContext = tceContext;
+                    }
+                }
                 renderPageContext(mediaModalPageContext, pollyHeaderEl, 'beforebegin');
             } catch (e) {
                 console.warn('🦜 POLLY: Could not build Elementor page context for media modal:', e);
+            }
+        } else {
+            try {
+                const tceContext = getTinyMCEPageContext();
+                if (tceContext.paragraphsBefore || tceContext.paragraphsAfter || tceContext.isFunctional) {
+                    mediaModalPageContext = tceContext;
+                }
+                renderPageContext(mediaModalPageContext, pollyHeaderEl, 'beforebegin');
+            } catch (e) {
+                console.warn('🦜 POLLY: Could not build TinyMCE page context:', e);
             }
         }
 
@@ -1405,7 +1424,15 @@
                     instanceForm.append('type', selectedUsageTarget.type);
                     instanceForm.append('instance_id', selectedUsageTarget.instance_id);
                     instanceForm.append('alt_text', selectedText);
-                    fetch(config.ajaxUrl, { method: 'POST', body: instanceForm });
+                    fetch(config.ajaxUrl, { method: 'POST', body: instanceForm })
+                        .then(r => r.json())
+                        .then(r => {
+                            if (!r.success) {
+                                console.error('🦜 POLLY: Instance save failed:', r.data?.message);
+                                alert(`🦜 Saved the general alt text, but couldn't save it to this specific spot on the page: ${r.data?.message || 'unknown error'}`);
+                            }
+                        })
+                        .catch(err => console.error('🦜 POLLY: Instance save request failed:', err));
                 }
 
                 if (attachmentId) saveAltText(attachmentId, selectedText);
@@ -1446,7 +1473,7 @@
                 alert(errorMsg);
                 setTimeout(() => btn.focus({ focusVisible: true }), 50);
             } else {
-                modalCtl.showError(errorMsg, () => triggerGeneration(field, attachmentId));
+                modalCtl.showError(errorMsg, () => triggerGeneration(field, attachmentId), field, attachmentId, selectedUsageTarget);
             }
         } finally {
             btn.textContent = originalLabel;
@@ -1705,24 +1732,85 @@
 
             isDismissed: () => dismissed,
 
-            showError(message, onRetry) {
+            showError(message, onRetry, field = null, attachmentId = null, selectedUsageTarget = null) {
                 if (dismissed) return;
                 clearInterval(tipInterval);
-                headerEl.textContent = '🦜 Squawk! Something went sideways.';
-                modal.setAttribute('aria-label', 'Alt Text Generation Error');
+                headerEl.textContent = '🦜 Squawk! AI is busy or unavailable — Add alt text manually, or retry';
+                modal.setAttribute('aria-label', 'Alt Text Generation Error & Manual Entry');
+
+                const initialValue = field ? field.value : '';
+                const tipsList = ALT_TEXT_TIPS.map(tip => `<li style="margin-bottom:6px;">${escapeHtml(tip)}</li>`).join('');
+
                 body.innerHTML = `
-                    <p style="font-size:15px; line-height:1.6;">${message.replace(/\n/g, '<br>')}</p>
-                    <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-top:20px;">
-                        <button type="button" id="polly-error-retry-btn" class="button button-primary" style="flex:1; height:50px;">Try Again</button>
-                        <button type="button" id="polly-error-close-btn" class="button" style="flex:1; height:50px; color:#666;">Close</button>
+                    <p style="font-size:14px; line-height:1.5; color:#d63638; margin-bottom:15px;">
+                        ${message.replace(/\n/g, '<br>')}
+                    </p>
+                    <div style="margin-bottom:18px;">
+                        <label for="polly-manual-alt-input" style="display:block; font-weight:600; font-size:13px; margin-bottom:6px; color:#2c3338;">
+                            Write your alt text here:
+                        </label>
+                        <textarea id="polly-manual-alt-input" class="polly-choice-textarea" style="width:100%; min-height:80px; margin:0 0 6px 0;" placeholder="Describe what you see in the image context...">${escapeHtml(initialValue)}</textarea>
+                        <div id="polly-manual-char-counter" class="polly-choice-char-count ${initialValue.length > 125 ? 'over-limit' : ''}" style="font-size:11px; font-weight:600;">${initialValue.length} characters${initialValue.length > 125 ? ' — Try to keep the alt to 125 characters or below.' : ''}</div>
+                    </div>
+                    <div class="polly-modal-btn-row" style="display:flex; gap:10px; margin-bottom:20px;">
+                        <button type="button" id="polly-manual-apply-btn" class="button button-primary" style="flex:1; height:42px; font-weight:600;">Apply Alt Text</button>
+                        <button type="button" id="polly-error-retry-btn" class="button" style="flex:1; height:42px;">Retry Generation</button>
+                        <button type="button" id="polly-error-close-btn" class="button" style="height:42px; color:#666;">Close</button>
+                    </div>
+                    <div style="padding:14px; background:#f0f6fb; border-left:4px solid #2271b1; border-radius:6px;">
+                        <strong style="display:block; margin-bottom:8px; font-size:13px; color:#1d2327;">💡 Suggestions for writing effective alt text:</strong>
+                        <ul style="margin:0; padding-left:18px; font-size:12px; line-height:1.5; color:#3c434a;">
+                            ${tipsList}
+                        </ul>
                     </div>
                 `;
+
+                const errorContextBox = buildPageContextBox(pageContext, 'setup');
+                if (errorContextBox) body.insertBefore(errorContextBox, body.firstChild);
+
+                const textarea = body.querySelector('#polly-manual-alt-input');
+                const counter = body.querySelector('#polly-manual-char-counter');
+
+                if (textarea && counter) {
+                    textarea.addEventListener('input', () => {
+                        const len = textarea.value.length;
+                        const isOver = len > 125;
+                        counter.textContent = `${len} characters${isOver ? ' — Try to keep the alt to 125 characters or below.' : ''}`;
+                        counter.classList.toggle('over-limit', isOver);
+                    });
+                }
+
+                body.querySelector('#polly-manual-apply-btn').onclick = () => {
+                    const userAlt = textarea ? textarea.value.trim() : '';
+                    if (field) {
+                        field.value = userAlt;
+                        field.classList.remove('missing-alt');
+                        updateCharCounter(field);
+                        updateButtonLabel(field);
+                        field.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    if (selectedUsageTarget) {
+                        const instanceForm = new FormData();
+                        instanceForm.append('action', 'polly_save_instance_alt');
+                        instanceForm.append('nonce', config.nonce);
+                        instanceForm.append('post_id', selectedUsageTarget.post_id);
+                        instanceForm.append('attachment_id', attachmentId);
+                        instanceForm.append('type', selectedUsageTarget.type);
+                        instanceForm.append('instance_id', selectedUsageTarget.instance_id);
+                        instanceForm.append('alt_text', userAlt);
+                        fetch(config.ajaxUrl, { method: 'POST', body: instanceForm }).catch(err => console.error('🦜 POLLY: Instance save error:', err));
+                    }
+                    if (attachmentId) saveAltText(attachmentId, userAlt);
+                    advanceToNextMissing(userAlt);
+                };
+
                 body.querySelector('#polly-error-close-btn').onclick = dismiss;
                 body.querySelector('#polly-error-retry-btn').onclick = () => {
                     dismiss();
                     if (onRetry) onRetry();
                 };
-                body.querySelector('#polly-error-retry-btn').focus({ focusVisible: true });
+
+                if (textarea) textarea.focus();
             },
 
             populate(choices, field, original, onSelect) {
@@ -1938,6 +2026,44 @@
                 }
             },
         };
+    }
+
+    function getTinyMCEPageContext() {
+        const context = { isFunctional: false, functionalRole: '', destination: '', destinationTitle: '', paragraphsBefore: '', paragraphsAfter: '' };
+        const activeEd = window.tinymce?.activeEditor || window.tinymce?.EditorManager?.activeEditor;
+        if (!activeEd) return context;
+
+        try {
+            const node = activeEd.selection?.getNode?.();
+            if (!node) return context;
+
+            const imgEl = node.tagName === 'IMG' ? node : node.querySelector?.('img');
+            const linkParent = (imgEl || node).closest?.('a');
+            if (linkParent) {
+                context.isFunctional = true;
+                context.functionalRole = 'link';
+                context.destination = linkParent.getAttribute('href') || '';
+            }
+
+            const body = activeEd.getBody?.();
+            if (body) {
+                const allNodes = Array.from(body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote'));
+                const target = imgEl || node;
+                let pBefore = '', pAfter = '';
+                allNodes.forEach(el => {
+                    const txt = (el.innerText || el.textContent || '').trim();
+                    if (txt.length <= 15) return;
+                    const pos = el.compareDocumentPosition(target);
+                    if (pos & Node.DOCUMENT_POSITION_FOLLOWING) pBefore = txt;
+                    else if ((pos & Node.DOCUMENT_POSITION_PRECEDING) && !pAfter) pAfter = txt;
+                });
+                context.paragraphsBefore = pBefore;
+                context.paragraphsAfter = pAfter;
+            }
+        } catch (e) {
+            console.warn('🦜 POLLY: Error building TinyMCE page context:', e);
+        }
+        return context;
     }
 
     // Walks sibling blocks (via the block data model, not the DOM) to find

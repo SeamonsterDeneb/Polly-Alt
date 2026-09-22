@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 1.3.0
+ * Version: 1.3.9
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '1.3.0' );
+define( 'POLLY_ALT_VERSION', '1.3.9' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -607,54 +607,84 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
     $usages = [];
 
     foreach ( $posts as $post ) {
-        $flat       = polly_flatten_blocks( parse_blocks( $post->post_content ) );
+        $blocks = parse_blocks( $post->post_content );
+        $has_gutenberg_blocks = ! empty( $blocks ) && count( array_filter( $blocks, function( $b ) { return ! empty( $b['blockName'] ); } ) ) > 0;
         $occurrence = 0;
 
-                foreach ( $flat as $index => $block ) {
-            if ( 'core/image' !== $block['blockName'] ) {
-                continue;
-            }
+        if ( $has_gutenberg_blocks ) {
+            $flat = polly_flatten_blocks( $blocks );
+            foreach ( $flat as $index => $block ) {
+                $block_id = (int) ( $block['attrs']['id'] ?? 0 );
+                if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
+                    $block_id = (int) $m[1];
+                }
 
-            $block_id = (int) ( $block['attrs']['id'] ?? 0 );
-            if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
-                $block_id = (int) $m[1];
-            }
+                if ( $block_id !== (int) $attachment_id ) {
+                    continue;
+                }
 
-            if ( $block_id !== (int) $attachment_id ) {
-                continue;
-            }
+                $link_url = $block['attrs']['href'] ?? '';
+                if ( ! $link_url && ! empty( $block['innerHTML'] ) && preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\']/i', $block['innerHTML'], $lm ) ) {
+                    $link_url = $lm[1];
+                }
+                $dest_title = '';
+                if ( $link_url ) {
+                    $target_post_id = url_to_postid( $link_url );
+                    if ( $target_post_id ) {
+                        $dest_title = wp_specialchars_decode( get_the_title( $target_post_id ), ENT_QUOTES );
+                    }
+                }
 
-            $link_url = $block['attrs']['href'] ?? '';
-            if ( ! $link_url && ! empty( $block['innerHTML'] ) && preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\']/i', $block['innerHTML'], $lm ) ) {
-                $link_url = $lm[1];
+                $usages[] = [
+                    'post_id'          => $post->ID,
+                    'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
+                    'type'             => 'gutenberg',
+                    'instance_id'      => (string) $occurrence,
+                    'current_alt'      => $block['attrs']['alt'] ?? '',
+                    'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
+                    'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+                    'isFunctional'     => ! empty( $link_url ),
+                    'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
+                    'destination'      => $link_url,
+                    'destinationTitle' => $dest_title,
+                ];
+                $occurrence++;
             }
-            $dest_title = '';
-            if ( $link_url ) {
-                $target_post_id = url_to_postid( $link_url );
-                if ( $target_post_id ) {
-                    $dest_title = wp_specialchars_decode( get_the_title( $target_post_id ), ENT_QUOTES );
+        } else {
+            if ( preg_match_all( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $post->post_content, $matches ) ) {
+                foreach ( $matches[0] as $img_tag ) {
+                    preg_match( '/alt=["\']([^"\']*)["\']/i', $img_tag, $alt_m );
+                    $current_alt = $alt_m[1] ?? '';
+
+                    preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>[^<]*' . preg_quote( $img_tag, '/' ) . '/i', $post->post_content, $link_m );
+                    $link_url = $link_m[1] ?? '';
+
+                    $dest_title = '';
+                    if ( $link_url ) {
+                        $target_post_id = url_to_postid( $link_url );
+                        if ( $target_post_id ) {
+                            $dest_title = wp_specialchars_decode( get_the_title( $target_post_id ), ENT_QUOTES );
+                        }
+                    }
+
+                    $usages[] = [
+                        'post_id'          => $post->ID,
+                        'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
+                        'type'             => 'gutenberg',
+                        'instance_id'      => (string) $occurrence,
+                        'current_alt'      => $current_alt,
+                        'paragraphsBefore' => '',
+                        'paragraphsAfter'  => '',
+                        'isFunctional'     => ! empty( $link_url ),
+                        'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
+                        'destination'      => $link_url,
+                        'destinationTitle' => $dest_title,
+                    ];
+                    $occurrence++;
                 }
             }
-
-            $usages[] = [
-                'post_id'          => $post->ID,
-                'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
-                'type'             => 'gutenberg',
-                'instance_id'      => (string) $occurrence,
-                'current_alt'      => $block['attrs']['alt'] ?? '',
-                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
-                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
-                'isFunctional'     => ! empty( $link_url ),
-                'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
-                'destination'      => $link_url,
-                'destinationTitle' => $dest_title,
-            ];
-            $occurrence++;
         }
     }
-    
-    
-
 
     return $usages;
 }
@@ -703,20 +733,21 @@ function polly_flatten_elementor_elements( $elements ) {
 function polly_scan_elementor_usages( $attachment_id ) {
     global $wpdb;
 
-    $like_id = '%"id":' . (int) $attachment_id . '%';
+    $like_id    = '%"id":' . (int) $attachment_id . '%';
+    $like_class = '%wp-image-' . (int) $attachment_id . '%';
 
-        $post_ids = $wpdb->get_col(
+    $post_ids = $wpdb->get_col(
         $wpdb->prepare(
             "SELECT pm.post_id FROM {$wpdb->postmeta} pm
              INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
              WHERE pm.meta_key = '_elementor_data'
-             AND pm.meta_value LIKE %s
+             AND (pm.meta_value LIKE %s OR pm.meta_value LIKE %s)
              AND p.post_status NOT IN ('trash', 'auto-draft', 'inherit')
              AND p.post_type NOT IN ('revision', 'attachment')",
-            $like_id
+            $like_id,
+            $like_class
         )
     );
-
 
     $usages = [];
 
@@ -731,14 +762,47 @@ function polly_scan_elementor_usages( $attachment_id ) {
         $occurrence = 0;
 
         foreach ( $flat as $index => $element ) {
-            if ( ! in_array( $element['widgetType'], [ 'image', 'e-image', 'theme-site-logo' ], true ) ) {
-                continue;
-            }
-            if ( (int) ( $element['settings']['image']['id'] ?? 0 ) !== (int) $attachment_id ) {
+            $settings    = $element['settings'] ?? [];
+            $widget_type = $element['widgetType'] ?? '';
+
+            $is_image_widget = in_array( $widget_type, [ 'image', 'e-image', 'theme-site-logo' ], true )
+                && (int) ( $settings['image']['id'] ?? 0 ) === (int) $attachment_id;
+
+            $settings_str   = wp_json_encode( $settings );
+            $has_inline_img = (bool) preg_match( '/wp-image-' . (int) $attachment_id . '\b/', $settings_str );
+
+            if ( ! $is_image_widget && ! $has_inline_img ) {
                 continue;
             }
 
-            $link_url = $element['settings']['link']['url'] ?? '';
+            if ( $is_image_widget ) {
+                $current_alt = $settings['image']['alt'] ?? '';
+                $link_url    = $settings['link']['url'] ?? '';
+                $p_before    = polly_nearest_text( $flat, $index, -1 );
+                $p_after     = polly_nearest_text( $flat, $index, 1 );
+            } else {
+                $html = $settings['editor'] ?? ( $settings['html'] ?? '' );
+                $current_alt = '';
+                $link_url    = '';
+
+                if ( preg_match( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $html, $img_m ) ) {
+                    $img_tag = $img_m[0];
+                    if ( preg_match( '/alt=["\']([^"\']*)["\']/i', $img_tag, $alt_m ) ) {
+                        $current_alt = $alt_m[1];
+                    }
+                    if ( preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>[^<]*' . preg_quote( $img_tag, '/' ) . '/i', $html, $link_m ) ) {
+                        $link_url = $link_m[1];
+                    }
+                }
+
+                $parts    = preg_split( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $html );
+                $p_before = ! empty( $parts[0] ) ? trim( wp_strip_all_tags( $parts[0] ) ) : '';
+                $p_after  = ! empty( $parts[1] ) ? trim( wp_strip_all_tags( $parts[1] ) ) : '';
+
+                if ( empty( $p_before ) ) $p_before = polly_nearest_text( $flat, $index, -1 );
+                if ( empty( $p_after ) )  $p_after  = polly_nearest_text( $flat, $index, 1 );
+            }
+
             $dest_title = '';
             if ( $link_url ) {
                 $target_post_id = url_to_postid( $link_url );
@@ -752,9 +816,9 @@ function polly_scan_elementor_usages( $attachment_id ) {
                 'post_title'       => wp_specialchars_decode( get_the_title( $post_id ), ENT_QUOTES ),
                 'type'             => 'elementor',
                 'instance_id'      => (string) $occurrence,
-                'current_alt'      => $element['settings']['image']['alt'] ?? '',
-                'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
-                'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
+                'current_alt'      => $current_alt,
+                'paragraphsBefore' => $p_before,
+                'paragraphsAfter'  => $p_after,
                 'isFunctional'     => ! empty( $link_url ),
                 'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
                 'destination'      => $link_url,
@@ -781,18 +845,16 @@ add_action( 'wp_ajax_polly_get_usages', function () {
     }
 
     $cache_key = 'polly_usages_' . $attachment_id;
-    $usages    = get_transient( $cache_key );
-
-    if ( false === $usages || empty( $usages)) {
-        $usages = array_merge(
-            polly_scan_gutenberg_usages( $attachment_id ),
-            class_exists( '\Elementor\Plugin' ) ? polly_scan_elementor_usages( $attachment_id ) : []
-        );
-        set_transient( $cache_key, $usages, HOUR_IN_SECONDS );
-    }
+    delete_transient( $cache_key );
+    $usages = array_merge(
+        polly_scan_gutenberg_usages( $attachment_id ),
+        class_exists( '\Elementor\Plugin' ) ? polly_scan_elementor_usages( $attachment_id ) : []
+    );
+    set_transient( $cache_key, $usages, HOUR_IN_SECONDS );
 
     wp_send_json_success( [ 'usages' => $usages ] );
-} );
+    } 
+);
 
 // Invalidate every cached usage scan whenever a post is saved — cheap and simple for
 // Phase 1; a future pass could scope this to just the attachment IDs a given post
@@ -816,7 +878,13 @@ add_action( 'save_post', function ( $post_id ) {
  */
 function polly_set_gutenberg_block_alt( &$blocks, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
     foreach ( $blocks as &$block ) {
-        if ( 'core/image' === $block['blockName'] && (int) ( $block['attrs']['id'] ?? 0 ) === $attachment_id ) {
+        // paste this over the top of the foreach body in polly_set_gutenberg_block_alt (~line 818):
+        $block_id = (int) ( $block['attrs']['id'] ?? 0 );
+        if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
+            $block_id = (int) $m[1];
+        }
+
+        if ( 'core/image' === $block['blockName'] && $block_id === $attachment_id ) {
             if ( $counter === $target_occurrence ) {
                 $block['attrs']['alt'] = $alt_text;
 
@@ -884,11 +952,36 @@ function polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrenc
  */
 function polly_set_elementor_element_alt( &$elements, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
     foreach ( $elements as &$element ) {
-        if ( 'image' === ( $element['widgetType'] ?? '' )
-            && (int) ( $element['settings']['image']['id'] ?? 0 ) === $attachment_id
-        ) {
+        $settings    = &$element['settings'];
+        $widget_type = $element['widgetType'] ?? '';
+
+        $is_image_widget = in_array( $widget_type, [ 'image', 'e-image', 'theme-site-logo' ], true )
+            && (int) ( $settings['image']['id'] ?? 0 ) === $attachment_id;
+
+        $settings_str   = wp_json_encode( $settings );
+        $has_inline_img = (bool) preg_match( '/wp-image-' . (int) $attachment_id . '\b/', $settings_str );
+
+        if ( $is_image_widget || $has_inline_img ) {
             if ( $counter === $target_occurrence ) {
-                $element['settings']['image']['alt'] = $alt_text;
+                if ( $is_image_widget ) {
+                    $settings['image']['alt'] = $alt_text;
+                } else {
+                    foreach ( [ 'editor', 'html' ] as $key ) {
+                        if ( ! empty( $settings[ $key ] ) && preg_match( '/wp-image-' . (int) $attachment_id . '\b/', $settings[ $key ] ) ) {
+                            $settings[ $key ] = preg_replace_callback(
+                                '/<img[^>]*wp-image-' . (int) $attachment_id . '[^>]*>/i',
+                                function ( $match ) use ( $alt_text ) {
+                                    $img_tag = $match[0];
+                                    return preg_match( '/\salt="[^"]*"/i', $img_tag )
+                                        ? preg_replace( '/\salt="[^"]*"/i', ' alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 )
+                                        : preg_replace( '/<img/i', '<img alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 );
+                                },
+                                $settings[ $key ],
+                                1
+                            );
+                        }
+                    }
+                }
                 return true;
             }
             $counter++;
