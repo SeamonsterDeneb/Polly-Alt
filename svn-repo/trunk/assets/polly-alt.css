@@ -818,12 +818,45 @@ textarea[data-setting="alt"],
 }
 
 .polly-choice-tag.polly-tag-original {
-    color: #666;
+    color: #5a5959;
 }
 
 .polly-choice-tag.polly-tag-ai {
     color: #2271b1;
 }
+
+.polly-choice-tag.polly-tag-destination {
+    color: #0b4d75;
+    background: #e7f3fb;
+    border: 1px solid #72aee6;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-weight: 700;
+}
+
+.polly-functional-context-notice {
+    background: #eef6fc;
+    border: 1px solid #c5dff5;
+    border-left: 4px solid #0073aa;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.polly-functional-badge {
+    font-weight: 700;
+    font-size: 11px;
+    color: #0073aa;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+
+.polly-functional-text {
+    font-size: 12px;
+    color: #2c3338;
+    line-height: 1.4;
+}
+
 
 .polly-modal-fit-btn {
     margin-right: 5px;
