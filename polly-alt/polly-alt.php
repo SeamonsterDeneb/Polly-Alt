@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Polly Alt
  * Description: Like a parrot on a pirate's shoulder, Polly Alt tells your blind and low-vision users exactly what's on the horizon using Gemini AI.
- * Version: 1.3.9
+ * Version: 1.4.0
  * Author: Captain Accessible, SeaMonster Studios
  * Author URI: https://www.seamonsterstudios.com
  * Text Domain: polly-alt
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'POLLY_ALT_VERSION', '1.3.9' );
+define( 'POLLY_ALT_VERSION', '1.4.0' );
 define( 'POLLY_ALT_PLUGIN_FILE', __FILE__ );
 
 // =============================================================================
@@ -374,8 +374,13 @@ add_action( 'wp_ajax_polly_save_alt', function () {
         wp_send_json_error( [ 'message' => 'Post is not a media attachment.' ], 400 );
     }
 
-    $alt_text = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
-    update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+    $alt_text      = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
+    $only_if_empty = ! empty( $_POST['only_if_empty'] );
+    $existing_alt  = $only_if_empty ? get_post_meta( $attachment_id, '_wp_attachment_image_alt', true ) : '';
+
+    if ( ! $only_if_empty || '' === trim( (string) $existing_alt ) ) {
+        update_post_meta( $attachment_id, '_wp_attachment_image_alt', $alt_text );
+    }
 
     // Store the persistent decorative state in the WordPress post meta database
     if ( isset( $_POST['is_decorative'] ) ) {
@@ -550,6 +555,13 @@ function polly_flatten_blocks( $blocks ) {
                 'text'      => $text,
                 'innerHTML' => $block['innerHTML'] ?? '',
             ];
+        } elseif ( trim( (string) ( $block['innerHTML'] ?? '' ) ) !== '' ) {
+            $flat[] = [
+                'blockName' => null,
+                'attrs'     => [],
+                'text'      => trim( wp_strip_all_tags( $block['innerHTML'] ) ),
+                'innerHTML' => $block['innerHTML'],
+            ];
         }
 
         if ( ! empty( $block['innerBlocks'] ) ) {
@@ -596,7 +608,7 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
         $wpdb->prepare(
             "SELECT ID, post_title, post_content 
             FROM {$wpdb->posts} 
-            WHERE post_status = 'publish' 
+            WHERE post_status NOT IN ('trash', 'auto-draft', 'inherit') 
             AND post_type NOT IN ('revision', 'attachment') 
             AND (post_content LIKE %s OR post_content LIKE %s)",
             $like_class,
@@ -606,14 +618,14 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
 
     $usages = [];
 
-    foreach ( $posts as $post ) {
-        $blocks = parse_blocks( $post->post_content );
-        $has_gutenberg_blocks = ! empty( $blocks ) && count( array_filter( $blocks, function( $b ) { return ! empty( $b['blockName'] ); } ) ) > 0;
-        $occurrence = 0;
+        foreach ( $posts as $post ) {
+        $blocks                = parse_blocks( $post->post_content );
+        $flat                  = polly_flatten_blocks( $blocks );
+        $gutenberg_occurrence  = 0;
+        $classic_occurrence    = 0;
 
-        if ( $has_gutenberg_blocks ) {
-            $flat = polly_flatten_blocks( $blocks );
-            foreach ( $flat as $index => $block ) {
+        foreach ( $flat as $index => $block ) {
+            if ( 'core/image' === $block['blockName'] ) {
                 $block_id = (int) ( $block['attrs']['id'] ?? 0 );
                 if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
                     $block_id = (int) $m[1];
@@ -639,7 +651,7 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
                     'post_id'          => $post->ID,
                     'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
                     'type'             => 'gutenberg',
-                    'instance_id'      => (string) $occurrence,
+                    'instance_id'      => (string) $gutenberg_occurrence,
                     'current_alt'      => $block['attrs']['alt'] ?? '',
                     'paragraphsBefore' => polly_nearest_text( $flat, $index, -1 ),
                     'paragraphsAfter'  => polly_nearest_text( $flat, $index, 1 ),
@@ -648,15 +660,20 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
                     'destination'      => $link_url,
                     'destinationTitle' => $dest_title,
                 ];
-                $occurrence++;
+                $gutenberg_occurrence++;
+                continue;
             }
-        } else {
-            if ( preg_match_all( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $post->post_content, $matches ) ) {
-                foreach ( $matches[0] as $img_tag ) {
+
+            if ( null === $block['blockName'] && ! empty( $block['innerHTML'] )
+                && preg_match_all( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $block['innerHTML'], $img_matches, PREG_OFFSET_CAPTURE )
+            ) {
+                foreach ( $img_matches[0] as $match ) {
+                    list( $img_tag, $offset ) = $match;
+
                     preg_match( '/alt=["\']([^"\']*)["\']/i', $img_tag, $alt_m );
                     $current_alt = $alt_m[1] ?? '';
 
-                    preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>[^<]*' . preg_quote( $img_tag, '/' ) . '/i', $post->post_content, $link_m );
+                    preg_match( '/<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>[^<]*' . preg_quote( $img_tag, '/' ) . '/i', $block['innerHTML'], $link_m );
                     $link_url = $link_m[1] ?? '';
 
                     $dest_title = '';
@@ -667,20 +684,25 @@ function polly_scan_gutenberg_usages( $attachment_id ) {
                         }
                     }
 
+                    $before_text = trim( wp_strip_all_tags( substr( $block['innerHTML'], 0, $offset ) ) );
+                    $after_text  = trim( wp_strip_all_tags( substr( $block['innerHTML'], $offset + strlen( $img_tag ) ) ) );
+                    $before_text = strlen( $before_text ) > 400 ? '…' . substr( $before_text, -400 ) : $before_text;
+                    $after_text  = strlen( $after_text ) > 400 ? substr( $after_text, 0, 400 ) . '…' : $after_text;
+
                     $usages[] = [
                         'post_id'          => $post->ID,
                         'post_title'       => wp_specialchars_decode( get_the_title( $post->ID ) ?: $post->post_title, ENT_QUOTES ),
-                        'type'             => 'gutenberg',
-                        'instance_id'      => (string) $occurrence,
+                        'type'             => 'classic',
+                        'instance_id'      => (string) $classic_occurrence,
                         'current_alt'      => $current_alt,
-                        'paragraphsBefore' => '',
-                        'paragraphsAfter'  => '',
+                        'paragraphsBefore' => '' !== $before_text ? $before_text : polly_nearest_text( $flat, $index, -1 ),
+                        'paragraphsAfter'  => '' !== $after_text ? $after_text : polly_nearest_text( $flat, $index, 1 ),
                         'isFunctional'     => ! empty( $link_url ),
                         'functionalRole'   => ! empty( $link_url ) ? 'link' : '',
                         'destination'      => $link_url,
                         'destinationTitle' => $dest_title,
                     ];
-                    $occurrence++;
+                    $classic_occurrence++;
                 }
             }
         }
@@ -878,7 +900,6 @@ add_action( 'save_post', function ( $post_id ) {
  */
 function polly_set_gutenberg_block_alt( &$blocks, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
     foreach ( $blocks as &$block ) {
-        // paste this over the top of the foreach body in polly_set_gutenberg_block_alt (~line 818):
         $block_id = (int) ( $block['attrs']['id'] ?? 0 );
         if ( ! $block_id && ! empty( $block['innerHTML'] ) && preg_match( '/wp-image-(\d+)/', $block['innerHTML'], $m ) ) {
             $block_id = (int) $m[1];
@@ -915,13 +936,6 @@ function polly_set_gutenberg_block_alt( &$blocks, $attachment_id, $target_occurr
     return false;
 }
 
-/**
- * Update the alt attribute on the Nth occurrence of $attachment_id within a post's
- * Gutenberg blocks (occurrence defined the same way as polly_scan_gutenberg_usages),
- * then reassemble and save the post content.
- *
- * @return bool True on success, false if the target block couldn't be located.
- */
 function polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
     $post = get_post( $post_id );
     if ( ! $post ) {
@@ -932,6 +946,70 @@ function polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrenc
     $counter  = 0;
     $alt_text = sanitize_text_field( $alt_text );
     $found    = polly_set_gutenberg_block_alt( $blocks, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
+
+    if ( ! $found ) {
+        return false;
+    }
+
+    wp_update_post( [
+        'ID'           => $post_id,
+        'post_content' => serialize_blocks( $blocks ),
+    ] );
+
+    return true;
+}
+
+/**
+ * Update the alt attribute on the Nth occurrence of $attachment_id within a post's
+ * Gutenberg blocks (occurrence defined the same way as polly_scan_gutenberg_usages),
+ * then reassemble and save the post content.
+ *
+ * @return bool True on success, false if the target block couldn't be located.
+ */
+function polly_set_classic_segment_alt( &$blocks, $attachment_id, $target_occurrence, $alt_text, &$counter ) {
+    foreach ( $blocks as &$block ) {
+        if ( empty( $block['blockName'] ) && ! empty( $block['innerHTML'] ) ) {
+            if ( preg_match_all( '/<img\b[^>]*?\bwp-image-' . (int) $attachment_id . '\b[^>]*>/i', $block['innerHTML'], $matches, PREG_OFFSET_CAPTURE ) ) {
+                foreach ( $matches[0] as $match ) {
+                    list( $img_tag, $offset ) = $match;
+
+                    if ( $counter === $target_occurrence ) {
+                        $new_tag = preg_match( '/\salt="[^"]*"/', $img_tag )
+                            ? preg_replace( '/\salt="[^"]*"/', ' alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 )
+                            : preg_replace( '/<img/', '<img alt="' . esc_attr( $alt_text ) . '"', $img_tag, 1 );
+
+                        $block['innerHTML'] = substr_replace( $block['innerHTML'], $new_tag, $offset, strlen( $img_tag ) );
+                        if ( isset( $block['innerContent'][0] ) ) {
+                            $block['innerContent'][0] = $block['innerHTML'];
+                        }
+
+                        return true;
+                    }
+                    $counter++;
+                }
+            }
+        }
+
+        if ( ! empty( $block['innerBlocks'] ) ) {
+            if ( polly_set_classic_segment_alt( $block['innerBlocks'], $attachment_id, $target_occurrence, $alt_text, $counter ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function polly_save_classic_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text ) {
+    $post = get_post( $post_id );
+    if ( ! $post ) {
+        return false;
+    }
+
+    $blocks   = parse_blocks( $post->post_content );
+    $counter  = 0;
+    $alt_text = sanitize_text_field( $alt_text );
+    $found    = polly_set_classic_segment_alt( $blocks, (int) $attachment_id, (int) $occurrence, $alt_text, $counter );
 
     if ( ! $found ) {
         return false;
@@ -1040,7 +1118,7 @@ add_action( 'wp_ajax_polly_save_instance_alt', function () {
     $occurrence    = absint( $_POST['instance_id'] ?? 0 );
     $alt_text      = sanitize_text_field( wp_unslash( $_POST['alt_text'] ?? '' ) );
 
-    if ( ! $post_id || ! $attachment_id || ! in_array( $type, [ 'gutenberg', 'elementor' ], true ) ) {
+    if ( ! $post_id || ! $attachment_id || ! in_array( $type, [ 'gutenberg', 'elementor', 'classic' ], true ) ) {
         wp_send_json_error( [ 'message' => 'Invalid instance save request.' ], 400 );
     }
 
@@ -1051,9 +1129,13 @@ add_action( 'wp_ajax_polly_save_instance_alt', function () {
         wp_send_json_error( [ 'message' => 'Permission denied.' ], 403 );
     }
 
-    $saved = ( 'gutenberg' === $type )
-        ? polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text )
-        : polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+    if ( 'gutenberg' === $type ) {
+        $saved = polly_save_gutenberg_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+    } elseif ( 'classic' === $type ) {
+        $saved = polly_save_classic_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+    } else {
+        $saved = polly_save_elementor_instance_alt( $post_id, $attachment_id, $occurrence, $alt_text );
+    }
 
     if ( ! $saved ) {
         wp_send_json_error( [ 'message' => 'Could not locate that image instance — it may have moved. Try refreshing.' ], 404 );

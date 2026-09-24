@@ -535,6 +535,8 @@
             if (document.getElementById('polly-enforcement-overlay')) return;
 
         const noun = missingCount === 1 ? 'image is' : 'images are';
+        const squawks = ['Just a moment, Captain!', 'Blimey!', 'Blargh!', 'Hold fast, Captain!'];
+        const randomSquawk = squawks[Math.floor(Math.random() * squawks.length)];
 
         const overlay = document.createElement('div');
         overlay.id = 'polly-enforcement-overlay';
@@ -548,7 +550,7 @@
         modal.setAttribute('aria-labelledby', 'polly-alert-heading');
         modal.innerHTML = `
             <div class="polly-modal-header">
-                <h3 id="polly-alert-heading">🦜 Just a moment, Captain!</h3>
+                <h3 id="polly-alert-heading">🦜 ${randomSquawk}</h3>
             </div>
             <div class="polly-modal-body">
                 <p class="polly-enforcement-alert-text">
@@ -746,7 +748,7 @@
     // AJAX save
     // -------------------------------------------------------------------------
 
-    async function saveAltText(id, text, isDecorative = false) {
+    async function saveAltText(id, text, isDecorative = false, onlyIfEmpty = false) {
         if (!id) return;
         const formData = new FormData();
         formData.append('action', 'polly_save_alt');
@@ -754,6 +756,7 @@
         formData.append('alt_text', text);
         formData.append('is_decorative', isDecorative ? 1 : 0);
         formData.append('remove_title', config.removeTitle ? 1 : 0);
+        formData.append('only_if_empty', onlyIfEmpty ? 1 : 0);
         formData.append('nonce', config.nonce);
 
         try {
@@ -944,6 +947,10 @@
             });
 
             field.addEventListener('blur', () => {
+                if (field.dataset.pollySkipNextBlurSave === 'true') {
+                    delete field.dataset.pollySkipNextBlurSave;
+                    return;
+                }
                 const id = resolveAttachmentId(field);
                 if (id) {
                     saveAltText(id, field.value);
@@ -1206,6 +1213,7 @@
         }
 
         const original = field.value.trim();
+        field.dataset.pollyOriginalAlt = original;
 
         // 1. If in Media Library and no active editor context was passed, discover
         // usages on the server — but don't pick one yet. That happens after the
@@ -1435,7 +1443,8 @@
                         .catch(err => console.error('🦜 POLLY: Instance save request failed:', err));
                 }
 
-                if (attachmentId) saveAltText(attachmentId, selectedText);
+                if (attachmentId) saveAltText(attachmentId, selectedText, false, !!selectedUsageTarget);
+                if (selectedUsageTarget) field.dataset.pollySkipNextBlurSave = 'true';
                 updateCharCounter(field);
                 updateButtonLabel(field);
 
@@ -1560,8 +1569,11 @@
 
             addOption('Global Default (no specific page context)', null);
             usages.forEach((usage) => {
-                const typeLabel = usage.type === 'elementor' ? 'Elementor Widget' : 'Gutenberg Block';
-                addOption(`${usage.post_title} — ${typeLabel}`, usage);
+                const typeLabel = usage.type === 'elementor' ? 'Elementor Widget' : (usage.type === 'classic' ? 'Classic Content' : 'Gutenberg Block');
+                const altPreview = usage.current_alt
+                    ? `"${usage.current_alt.length > 40 ? usage.current_alt.slice(0, 40) + '…' : usage.current_alt}"`
+                    : 'no alt set';
+                addOption(`${usage.post_title} — ${typeLabel} (currently: ${altPreview})`, usage);
             });
 
                         const trigger = triggerBtn || document.activeElement;
@@ -1800,7 +1812,11 @@
                         instanceForm.append('alt_text', userAlt);
                         fetch(config.ajaxUrl, { method: 'POST', body: instanceForm }).catch(err => console.error('🦜 POLLY: Instance save error:', err));
                     }
-                    if (attachmentId) saveAltText(attachmentId, userAlt);
+                    if (attachmentId) saveAltText(attachmentId, userAlt, false, !!selectedUsageTarget);
+                    if (selectedUsageTarget) {
+                        field.value = field.dataset.pollyOriginalAlt || '';
+                        field.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
                     advanceToNextMissing(userAlt);
                 };
 
@@ -2318,9 +2334,13 @@
 
             const field = altLabel.closest('.components-base-control')
                 ?.querySelector('textarea.components-textarea-control__input');
-            if (!field || field.dataset.pollyReady) return;
+            if (!field || field.dataset.pollyReady) {
+                console.log('🦜 POLLY DEBUG [sidebar watcher] skipped — field missing or already wired', { hasField: !!field, alreadyWired: field?.dataset.pollyReady });
+                return;
+            }
 
             field.dataset.pollyReady = 'true';
+            console.log('🦜 POLLY DEBUG [sidebar watcher] wiring new field for block', wp.data.select('core/block-editor').getSelectedBlock()?.clientId);
 
             const getBlockData = () => {
                 try {
@@ -2360,6 +2380,8 @@
                 }
                 if (!field.id) field.id = 'polly-gutenberg-field-' + id;
                 btn.dataset.for = field.id;
+                activeClientId = getBlockData()?.clientId || activeClientId;
+                console.log('🦜 POLLY DEBUG [generate click]', { attachmentId: id, activeClientId, currentAlt: wp.data.select('core/block-editor').getBlock(activeClientId)?.attributes?.alt });
                 const pageContext = getGutenbergPageContext(getBlockData());
                 renderPageContext(pageContext, field.closest('.components-base-control'), 'beforebegin');
                 triggerGeneration(field, String(id), pageContext);
@@ -2384,6 +2406,7 @@
 
             // Sync initial decorative state from block attributes OR underlying attachment fallback model
             const initialBlock = getBlockData();
+            let activeClientId = initialBlock?.clientId || null;
             let attachmentIsDecorative = false;
             const attachId = getAttachmentId();
             if (attachId && window.wp?.media?.attachment) {
@@ -2447,12 +2470,16 @@
                 updateButtonLabel(field);
                 
                 // Also sync alt text back to block attributes
-                const block = getBlockData();
-                if (block) {
+                const targetClientId = activeClientId || getBlockData()?.clientId;
+                console.log('🦜 POLLY DEBUG [field input]', { targetClientId, fieldValue: field.value });
+                if (targetClientId) {
                     wp.data.dispatch('core/block-editor').updateBlockAttributes(
-                        block.clientId,
+                        targetClientId,
                         { alt: field.value }
                     );
+                    console.log('🦜 POLLY DEBUG [after dispatch]', { storedAlt: wp.data.select('core/block-editor').getBlock(targetClientId)?.attributes?.alt });
+                } else {
+                    console.log('🦜 POLLY DEBUG [field input] no targetClientId — write skipped entirely');
                 }
             });
         });
@@ -2639,7 +2666,8 @@
             return;
         }
 
-        let isLockedByPolly = false;
+        let wasSaving = false;
+        let bypassCompliance = false;
 
         wp.data.subscribe(() => {
             try {
@@ -2649,49 +2677,51 @@
                 const isSaving = editorSelect.isSavingPost();
                 const isPublishing = editorSelect.isPublishingPost();
                 const isAutosaving = editorSelect.isAutosavingPost();
-                
-                // Do not intercept background autosaves
+
                 if (isAutosaving) return;
 
-                if ((isSaving || isPublishing) && !isLockedByPolly) {
-                    const allBlocks = wp.data.select('core/block-editor').getBlocks();
-                    
-                    const missingImageBlocks = [];
+                const justStartedSaving = (isSaving || isPublishing) && !wasSaving;
+                wasSaving = isSaving || isPublishing;
 
-                    function findUnaltedImages(blocksList) {
-                        blocksList.forEach(block => {
-                            if (block.name === 'core/image') {
-                                const alt = block.attributes?.alt ?? '';
-                                const isDeco = block.attributes?.className?.includes('is-decorative') || false;
-                                if (!alt.trim() && !isDeco) {
-                                    missingImageBlocks.push(block);
-                                }
+                if (!justStartedSaving) return;
+
+                if (bypassCompliance) {
+                    bypassCompliance = false;
+                    return;
+                }
+
+                const allBlocks = wp.data.select('core/block-editor').getBlocks();
+                const missingImageBlocks = [];
+
+                function findUnaltedImages(blocksList) {
+                    blocksList.forEach(block => {
+                        if (block.name === 'core/image') {
+                            const alt = block.attributes?.alt ?? '';
+                            const isDeco = block.attributes?.className?.includes('is-decorative') || false;
+                            if (!alt.trim() && !isDeco) {
+                                missingImageBlocks.push(block);
                             }
-                            if (block.innerBlocks && block.innerBlocks.length > 0) {
-                                findUnaltedImages(block.innerBlocks);
-                            }
-                        });
-                    }
-                    
+                        }
+                        if (block.innerBlocks && block.innerBlocks.length > 0) {
+                            findUnaltedImages(block.innerBlocks);
+                        }
+                    });
+                }
+
                     findUnaltedImages(allBlocks);
+                    console.log('🦜 POLLY DEBUG [save scan]', missingImageBlocks.map(b => ({ clientId: b.clientId, alt: b.attributes?.alt })));
 
                     if (missingImageBlocks.length > 0) {
-                        isLockedByPolly = true;
-                        
-                        // Fire lock command immediately
-                        wp.data.dispatch('core/editor').lockPostSaving('polly-compliance-lock');
+                    wp.data.dispatch('core/editor').lockPostSaving('polly-compliance-lock');
 
-                        showGlobalEnforcementModal(missingImageBlocks, () => {
-                            wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
-                            
-                            wp.data.dispatch('core/editor').savePost();
-                            setTimeout(() => { isLockedByPolly = false; }, 2000);
-                        }, () => {
-                            wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
-                            isLockedByPolly = false;
-                            startPollyWalkthrough(missingImageBlocks);
-                        });
-                    }
+                    showGlobalEnforcementModal(missingImageBlocks, () => {
+                        bypassCompliance = true;
+                        wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
+                        wp.data.dispatch('core/editor').savePost();
+                    }, () => {
+                        wp.data.dispatch('core/editor').unlockPostSaving('polly-compliance-lock');
+                        startPollyWalkthrough(missingImageBlocks);
+                    });
                 }
             } catch (err) {
                 console.warn('Asynchronous Gutenberg compliance engine failure:', err);

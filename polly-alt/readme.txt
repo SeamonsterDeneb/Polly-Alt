@@ -3,7 +3,7 @@ Contributors: seamonsterdeneb
 Tags: accessibility, alt text, gemini ai, image descriptions, a11y
 Requires at least: 6.0
 Tested up to: 7.1
-Stable tag: 1.3.1
+Stable tag: 1.4.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -42,8 +42,19 @@ Never. Polly Alt operates on a strict human-in-the-loop review architecture. The
 
 == Changelog ==
 
+= 1.4.0 =
+* **Context Awareness:** Automatically reads surrounding headings and paragraphs in Gutenberg, Elementor, and Classic editors to steer AI descriptions toward page context.
+* **Per-Instance Alt Text:** Scans and applies unique alternative descriptions to specific image occurrences across posts without overwriting global attachment defaults.
+* **Functional Image Accommodation:** Detects linked images and buttons, directing Gemini to write destination- and action-oriented alt text.
+* **"Make it Fit" Character Compression:** One-click AI budget compression to keep descriptions under the ideal 125-character budget.
+* **Side-by-Side Revision Assistant:** Added a diff assistant card to inspect, copy from, or revert inline alt text edits.
+* **Publish & Save Compliance Wizard:** Page-wide interceptor in Gutenberg and Elementor that steps you through missing alt text before publishing.
+* **Dynamic Model Fetching:** Automatically fetches live Gemini vision models directly from Google AI Studio API with transient caching.
+* **Drag-and-Drop Batch Upload Alerts:** Instant prompts when newly uploaded batch media items require alt text.
+* **Media Library List View Column:** Added custom column for inline editing and AI generation directly in the WordPress Media Library list layout.
+
 = 1.0.0 =
-* Launching Polly Alt v1.0.0 — Complete integration with Gutenberg and Elementor modalities.
+* **Launching Polly Alt v1.0.0** — Complete integration with Gutenberg and Elementor modalities.
 
 == External services ==
 
